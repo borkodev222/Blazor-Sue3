@@ -1,0 +1,30 @@
+﻿@page "/CalibrateLog"
+@layout MainLayout
+@inject HttpClient HttpClient
+@inject NavigationManager NavigationManager
+@inject SueApiService SueApiService
+@inject ModelHandlerService ModelHandlerService
+@code{
+    protected override async Task OnInitializedAsync()
+    {
+        if (SueApiService.LoggedIn)
+        {
+            if (ModelHandlerService.CurrentModel is not null)
+            {
+                ModelHandlerService.CurrentPane = ModelHandlerService.Panes.Calibrate;
+                await SueApiService.PostUndoAllChanges(HttpClient, ModelHandlerService.CurrentModel.ModelGuid);
+                ModelHandlerService.CurrentModel = await SueApiService.GetModel(HttpClient, ModelHandlerService.CurrentModel.ModelGuid);
+                ModelHandlerService.CalibrationSaved = true;
+                NavigationManager.NavigateTo("CalibrateLog/Log");
+            }
+            else
+            {
+                NavigationManager.NavigateTo("Models");
+            }
+        }
+        else
+        {
+            NavigationManager.NavigateTo("");
+        }
+    }
+}

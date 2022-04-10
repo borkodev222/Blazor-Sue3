@@ -1,0 +1,89 @@
+﻿@page "/visualise/levers"
+@layout MainLayout
+@inject HttpClient httpClient
+@inject NavigationManager NavigationManager
+@inject Sue3.Web.Blazor.Data.SueApiService SueApiService
+@inject Sue3.Web.Blazor.Data.ModelHandlerService ModelHandlerService
+@using Plotly.Blazor.LayoutLib
+
+<!-- This is the submenu for visualise: displays the levers-->
+
+@if (loading)
+{
+    <div class="modal d-inline" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content border-0">
+                <div class="modal-body">
+                    <div class="d-flex justify-content-center">
+                        <div class="spinner-border" role="status">
+                            <span class="sr-only">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div style="margin-left:3vw;margin-right:3vw;">
+        <PlotlyChart @bind-Config="config" @bind-Layout="layout" @bind-Data="data" @ref="chart" />
+    </div>
+}
+@code{
+    protected override async Task OnInitializedAsync()
+    {
+        if (SueApiService.LoggedIn)
+        {
+            if (ModelHandlerService.CurrentModel is not null)
+            {
+                ModelHandlerService.CurrentPane = ModelHandlerService.Panes.Visualise;
+                ModelHandlerService.CurrentModel = await SueApiService.GetModel(httpClient, ModelHandlerService.CurrentModel.ModelGuid);
+                dataBar = new Bar();
+                dataBar.Name = "Weights";
+                dataBar.X = model.Parameters.Select(p => p.UserWeight.ToString()).ToList<object>();
+                dataBar.Y = model.Parameters.Select(p => p.Name).ToList<object>();
+                dataBar.Orientation = Plotly.Blazor.Traces.BarLib.OrientationEnum.H;
+                data.Add(dataBar);
+                loading = false;
+            }
+            else
+            {
+                NavigationManager.NavigateTo("Models");
+            }
+        }
+        else
+        {
+            NavigationManager.NavigateTo("");
+        }
+    }
+    bool loading = true;
+    SUM.Model.Components.Descriptive.Model model => ModelHandlerService.CurrentModel;
+    Bar dataBar;
+
+    PlotlyChart chart;
+    Config config = new Config() { Responsive = true, StaticPlot = true, DisplayModeBar = Plotly.Blazor.ConfigLib.DisplayModeBarEnum.False };
+    Layout layout = new Layout()
+    {
+        PlotBgColor = "#FCFCFC",
+        PaperBgColor = "#FCFCFC",
+        BarMode = BarModeEnum.Stack,
+        Height = 750,
+        YAxis = new List<YAxis>()
+    {
+            new YAxis()
+            {
+                AutoMargin = true,
+            }
+        },
+        XAxis = new List<XAxis>()
+    {
+            new XAxis()
+            {
+                Range = new List<object>(){0.0,10.0}
+            }
+        }
+    };
+    // Using of the interface IList is important for the event callback!
+    IList<ITrace> data = new List<ITrace>();
+}

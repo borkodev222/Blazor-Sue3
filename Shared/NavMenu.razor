@@ -1,0 +1,510 @@
+﻿@inject ModelHandlerService ModelHandlerService
+@inject IToastService ToastService
+@inject SueApiService SueApiService
+@inject HttpClient HttpClient
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+@using SUM.Model.Components.Descriptive
+@implements IDisposable
+<div class="pl-4 navbar navbar-dark">
+    <a class="navbar-brand" href="/">
+        <img style="width:100%" src="./Assets/Images/Sue_work_horizontal_cropped.jpg.png" />
+    </a>
+    @if (ModelHandlerService.CurrentPane == ModelHandlerService.Panes.ModelList) { 
+    <PreventableNavLink class="nav-link" href="/" @onclick="ForgetLogout">
+        Logout
+    </PreventableNavLink>
+    }
+</div>
+<div class="@NavMenuCssClass" style="min-width:15rem;overflow-y: auto; overflow-x:hidden;height: calc(100vh - 17rem);" @onclick="ToggleNavMenu">
+    <ul class="nav flex-column">
+        @if (ModelHandlerService.CurrentPane != ModelHandlerService.Panes.ModelList)
+        {
+            <li class="nav-item px-3">
+                <PreventableNavLink @onclick="()=>TryNavigateToPane(ModelHandlerService.Panes.ModelList)" class="nav-link" href="Models" Match="NavLinkMatch.Prefix">
+                    <span class="oi oi-list" aria-hidden="true" /> Models
+                </PreventableNavLink>
+            </li>
+            <li class="nav-item px-3">
+                <PreventableNavLink @onclick="()=>TryNavigateToPane(ModelHandlerService.Panes.Manage)" class="nav-link" href="Manage" Match="NavLinkMatch.Prefix">
+                    <span class="oi oi-pencil" aria-hidden="true" /> 1. Define Variables
+                </PreventableNavLink>
+                @if (ModelHandlerService.CurrentPane == ModelHandlerService.Panes.Manage)
+                {
+                    <ul class="nav flex-column">
+                        <li class="nav-item px-3">
+                            <PreventableNavLink @onclick="()=>NavigateToTab(ModelHandlerService.ManagePanes.Model)" class="nav-link" href="Manage/Model" Match="NavLinkMatch.All">
+                                <span class="oi oi-pencil" aria-hidden="true" /> 1.1. Model
+                            </PreventableNavLink>
+                        </li>
+                        <li class="nav-item px-3">
+                            <PreventableNavLink @onclick="()=>NavigateToTab(ModelHandlerService.ManagePanes.Outcome)" class="nav-link" href="Manage/Outcome" Match="NavLinkMatch.All">
+                                <span class="oi oi-pencil" aria-hidden="true" /> 1.2. Outcome
+                            </PreventableNavLink>
+                        </li>
+                        <li class="nav-item px-3">
+                            <PreventableNavLink @onclick="()=>NavigateToTab(ModelHandlerService.ManagePanes.Variables)" class="nav-link" href="Manage/Variables" Match="NavLinkMatch.All">
+                                <span class="oi oi-pencil" aria-hidden="true" /> 1.3. Variables
+                            </PreventableNavLink>
+                        </li>
+                    </ul>
+                }
+            </li>
+            <li class="nav-item px-3">
+                <PreventableNavLink @onclick="()=>TryNavigateToPane(ModelHandlerService.Panes.Train)" class="nav-link" href="Train" Match="NavLinkMatch.Prefix">
+                    <span class="oi oi-book" aria-hidden="true" /> 2. Train Model
+                </PreventableNavLink>
+                @if (ModelHandlerService.CurrentPane == ModelHandlerService.Panes.Train)
+                {
+                    <ul class="nav flex-column">
+                        <li class="nav-item px-3">
+                            <NavLink class="nav-link" href="Train/Teach">
+                                <span class="oi oi-book" aria-hidden="true" /> 2.1. Teach
+                            </NavLink>
+                        </li>
+                        <li class="nav-item px-3">
+                            <NavLink class="nav-link" href="Train/Import">
+                                <span class="oi oi-book" aria-hidden="true" /> 2.2. Import
+                            </NavLink>
+                        </li>
+                        <li class="nav-item px-3">
+                            <NavLink class="nav-link" href="Train/Rules">
+                                <span class="oi oi-book" aria-hidden="true" /> 2.3. Rules
+                            </NavLink>
+                        </li>
+                        <li class="nav-item px-3">
+                            <NavLink class="nav-link" href="Train/Build">
+                                <span class="oi oi-book" aria-hidden="true" /> 2.4. Build
+                            </NavLink>
+                        </li>
+                    </ul>
+                }
+            </li>
+            <li class="nav-item px-3">
+                <PreventableNavLink @onclick="()=>TryNavigateToPane(ModelHandlerService.Panes.Visualise)" class="nav-link" href="Visualise" Match="NavLinkMatch.Prefix">
+                    <span class="oi oi-pie-chart" aria-hidden="true" /> 3. Visualise
+                </PreventableNavLink>
+                @if (ModelHandlerService.CurrentPane == ModelHandlerService.Panes.Visualise)
+                {
+                    <ul class="nav flex-column">
+                        <li class="nav-item px-3">
+                            <NavLink class="nav-link" href="Visualise/MindMap">
+                                <span class="oi oi-pie-chart" aria-hidden="true" /> 3.1. Mind Map
+                            </NavLink>
+                        </li>
+                        <li class="nav-item px-3">
+                            <NavLink class="nav-link" href="Visualise/Levers">
+                                <span class="oi oi-pie-chart" aria-hidden="true" /> 3.2. Levers
+                            </NavLink>
+                        </li>
+                    </ul>
+                }
+            </li>
+            <li class="nav-item px-3">
+                <PreventableNavLink @onclick="()=>TryNavigateToPane(ModelHandlerService.Panes.Use)" class="nav-link" href="Use" Match="NavLinkMatch.Prefix">
+                    <span class="oi oi-magnifying-glass" aria-hidden="true" /> 4. Use Model
+                </PreventableNavLink>
+                @if (ModelHandlerService.CurrentPane == ModelHandlerService.Panes.Use)
+                {
+                    <ul class="nav flex-column">
+                        <li class="nav-item px-3">
+                            <NavLink class="nav-link" href="Use/Ask">
+                                <span class="oi oi-magnifying-glass" aria-hidden="true" /> 4.1. Ask
+                            </NavLink>
+                        </li>
+                        <li class="nav-item px-3">
+                            <NavLink class="nav-link" href="Use/Test">
+                                <span class="oi oi-magnifying-glass" aria-hidden="true" /> 4.2. Test
+                            </NavLink>
+                        </li>
+                        <li class="nav-item px-3">
+                            <NavLink class="nav-link" href="Use/BulkQuery">
+                                <span class="oi oi-magnifying-glass" aria-hidden="true" /> 4.3. Bulk Query
+                            </NavLink>
+                        </li>
+                    </ul>
+                }
+            </li>
+            <li class="nav-item px-3">
+                <PreventableNavLink @onclick="()=>TryNavigateToPane(ModelHandlerService.Panes.Calibrate)" class="nav-link" href="CalibrateLog" Match="NavLinkMatch.Prefix">
+                    <span class="oi oi-cog" aria-hidden="true" /> 5. Log & Calibrate
+                </PreventableNavLink>
+                @if (ModelHandlerService.CurrentPane == ModelHandlerService.Panes.Calibrate)
+                {
+                    <ul class="nav flex-column">
+                        <li class="nav-item px-3">
+                            <NavLink class="nav-link" href="CalibrateLog/Log">
+                                <span class="oi oi-cog" aria-hidden="true" /> 5.1. Log
+                            </NavLink>
+                        </li>
+                        <li class="nav-item px-3">
+                            <NavLink class="nav-link" href="CalibrateLog/Calibrate">
+                                <span class="oi oi-cog" aria-hidden="true" /> 5.2. Calibrate
+                            </NavLink>
+                        </li>
+                    </ul>
+                }
+            </li>
+        }
+    </ul>
+</div>
+<img style="width:100%;position:absolute;bottom:0px;" src="./Assets/Images/footer-logo.png" @ondblclick="()=> { if (ModelHandlerService.CurrentPane == ModelHandlerService.Panes.ModelList && ModelHandlerService.IsSuperUser) OpenCreateNewUserModalInstance.InvokeAsync(); }"/>
+@code {         
+    protected override void OnInitialized()
+    {
+        ModelHandlerService.OnChange += StateHasChanged; // this tells the modelhandler to let the navmenu know when to rerender the active menu if it where to change from elsewhere.
+    }
+    public void Dispose()
+    {
+        ModelHandlerService.OnChange -= StateHasChanged;// this tells the modelhandler to no longer let the navmenu know to rerender, if the navmenu itself is no longer rendered.
+    }
+    [Parameter]
+    public Modal NavigationControlModal { get; set; }//This Modal is passed in from the mainlayout, since it should not appear in the sidebar, but be controlled from the sidebar.
+    [Parameter]
+    public EventCallback OpenCreateNewUserModalInstance { get; set; }
+
+    //Start of Default Blazor
+    bool collapseNavMenu = true;
+
+    string NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+    //End of Default Blazor
+
+    //When the user logs out, set the localstorage to be empty, and goes to login screen.
+    async Task ForgetLogout()
+    {
+        await JSRuntime.InvokeVoidAsync("rememberUser",string.Empty,string.Empty);
+        SueApiService.LogOut();
+        NavigationManager.NavigateTo("/");
+    }
+
+    //this is used to navigate between menu 1's submenus, and validate accordingly.
+    async Task NavigateToTab(ModelHandlerService.ManagePanes targetTab)
+    {
+        if(ModelHandlerService.CurrentManagePane != targetTab) {
+            if (ValidateCurrentTab())
+            {
+                if (ModelHandlerService.CurrentManagePane == ModelHandlerService.ManagePanes.Model && targetTab == ModelHandlerService.ManagePanes.Variables)
+                {
+                    if (!validateOutputParameter())
+                    {
+                        ToastService.ShowError("Please complete Define Variables - Outcome first.");
+                        return;
+                    }
+                }
+                if ((ModelHandlerService.NewModel && ModelHandlerService.CurrentManagePane == ModelHandlerService.ManagePanes.Model) || ModelModified())
+                {
+                    var opresult = await SueApiService.PostCreateOrUpdateModel(HttpClient, ModelHandlerService.CurrentModel);
+                    if (!opresult.IsError)
+                    {
+                        ModelHandlerService.CurrentModel.ModelGuid = opresult.Id;
+                    }
+                    else
+                    {
+                        ToastService.ShowError("Could not save changes");
+                        return;
+                    }
+                }
+                if (ModelHandlerService.CurrentManagePane != ModelHandlerService.ManagePanes.Model && ( ModelHandlerService.NewModel || ParameterChanged()))
+                {
+                    var list = new List<SUM.Model.Components.Descriptive.Parameter>();
+                    list.Add(ModelHandlerService.CurrentModel.OutputParameter);
+                    foreach(var par in ModelHandlerService.CurrentModel.Parameters)
+                    {
+                        list.Add(par);
+                    }
+                    var opresult = await SueApiService.PostCreateOrUpdateParameters(HttpClient, ModelHandlerService.CurrentModel.ModelGuid,list);
+                    if (!opresult.IsError)
+                    {
+                        ModelHandlerService.CurrentModel.ModelGuid = opresult.Id;
+                    }
+                    else
+                    {
+                        ToastService.ShowError("Could not save changes");
+                        return;
+                    }
+                }
+                NavigationManager.NavigateTo($"Manage/{targetTab.ToString()}");
+            }
+        }
+    }
+    //validates the current menu 1's submenu
+    bool ValidateCurrentTab()
+    {
+        var model = ModelHandlerService.CurrentModel;
+        if(ModelHandlerService.CurrentManagePane == ModelHandlerService.ManagePanes.Model)
+        {
+            if (model.Name == string.Empty)
+            {
+                ToastService.ShowError("Name may not be empty");
+                return false;
+            }
+            if (model.Name.Contains(','))
+            {
+                ToastService.ShowError("Name may not contain commas");
+                return false;
+            }
+            return true;
+        }else if(ModelHandlerService.CurrentManagePane == ModelHandlerService.ManagePanes.Outcome)
+        {
+            var parameter = model.OutputParameter;
+            if (parameter.Name == string.Empty)
+            {
+                ToastService.ShowError("Question may not be empty");
+                return false;
+            }
+            if (parameter.Name.Contains(','))
+            {
+                ToastService.ShowError("Question may not contain commas");
+                return false;
+            }
+            if (parameter.Name.Contains("#Error"))
+            {
+                ToastService.ShowError("Question may not contain #Error");
+                return false;
+            }
+            if (parameter.IsNumeric)
+            {
+                if (parameter.LowerValue >= parameter.UpperValue)
+                {
+                    ToastService.ShowError("Upper Value must be greater than Lower Value");
+                    return false;
+                }
+                if (parameter.Increment <= 0)
+                {
+                    ToastService.ShowError("Increment must be greater than 0");
+                    return false;
+                }
+                var increments = (int)Math.Round((parameter.UpperValue - parameter.LowerValue) / parameter.Increment);
+                var delta = Math.Abs(increments * parameter.Increment + parameter.LowerValue - parameter.UpperValue);
+                if (Math.Round(delta, parameter.Digits) > double.Epsilon)
+                {
+                    ToastService.ShowError("Upper value must be larger than the Lower Value by a multiple of the Increment");
+                    return false;
+                }
+            }
+            else if (parameter.IsCategorical)
+            {
+                if (parameter.Categories.Count <= 1)
+                {
+                    ToastService.ShowError("Outcome must have at least 2 categories");
+                    return false;
+                }
+            }
+            else
+            {
+                ToastService.ShowError("Outcome type must be specified");
+                return false;
+            }
+            return true;
+        }
+        else
+        {
+            return true;
+        }
+    }
+    //checks to make sure the outputparameter is valid
+    bool validateOutputParameter()
+    {
+        var outputParameter = ModelHandlerService.CurrentModel.OutputParameter;
+        if (outputParameter.Name is null || outputParameter.Name == string.Empty || outputParameter.Name.Contains(',') || outputParameter.Name.Contains("#Error"))
+            return false;
+        if (outputParameter.ParameterTypeId is null || outputParameter.ParameterTypeId == string.Empty)
+            return false;
+        if (outputParameter.IsNumeric)
+        {
+            if (outputParameter.LowerValue >= outputParameter.UpperValue)
+                return false;
+            if (outputParameter.Increment <= 0)
+                return false;
+            var increments = (int)Math.Round((outputParameter.UpperValue - outputParameter.LowerValue) / outputParameter.Increment);
+            var delta = Math.Abs(increments * outputParameter.Increment + outputParameter.LowerValue - outputParameter.UpperValue);
+            if (Math.Round(delta, outputParameter.Digits) > double.Epsilon)
+                return false;
+        }
+        else
+        {
+            if (outputParameter.Categories.Count <= 1)
+                return false;
+        }
+        return true;
+    }
+    //checks if model is modified
+    bool ModelModified()
+    {
+        var currentModel = ModelHandlerService.CurrentModel;
+        var lastAccessedModel = SueApiService.LastAccessedModel;
+        if (currentModel.Name != lastAccessedModel.Name)
+            return true;
+        if (currentModel.Description != lastAccessedModel.Description)
+            return true;
+        return false;
+    }
+    //checks if parameter is modified
+    bool ParameterChanged()
+    {
+        var currentModel = ModelHandlerService.CurrentModel;
+        var lastAccessedModel = SueApiService.LastAccessedModel;
+        if (ParameterChangedComparison(currentModel.OutputParameter, lastAccessedModel.OutputParameter))
+            return true;
+        if (currentModel.Parameters.Count != lastAccessedModel.Parameters.Count)
+            return true;
+        foreach (var parameter in currentModel.Parameters)
+        {
+            var respectiveParameter = lastAccessedModel.Parameters.Find(p => p.ParameterGuid == parameter.ParameterGuid);
+            if (respectiveParameter is null)
+                return true;
+            else if (ParameterChangedComparison(parameter, respectiveParameter))
+                return true;
+        }
+        return false;
+    }
+    //compares two parameters to see if they are the same
+    bool ParameterChangedComparison(SUM.Model.Components.Descriptive.Parameter a, SUM.Model.Components.Descriptive.Parameter b)
+    {
+        if (a.Name != b.Name)
+            return true;
+        if (a.SortOrder != b.SortOrder)
+            return true;
+        if (a.IsOutput != b.IsOutput)
+            return true;
+        if (a.ParameterTypeId != b.ParameterTypeId)
+            return true;
+        if (a.IsNumeric)
+        {
+            if (a.LowerValue != b.LowerValue)
+                return true;
+            if (a.UpperValue != b.UpperValue)
+                return true;
+            if (a.Increment != b.Increment)
+                return true;
+        }
+        else
+        {
+            if (a.IsOrdinal != b.IsOrdinal)
+                return true;
+            if (a.Categories.Count != b.Categories.Count)
+                return true;
+            foreach(var cat in a.Categories)
+            {
+                var respectiveCat = b.Categories.Find(c => c.CategoryGuid == cat.CategoryGuid);
+                if (respectiveCat is null)
+                    return true;
+                if (cat.Value != respectiveCat.Value)
+                    return true;
+                if (cat.SortOrder != respectiveCat.SortOrder)
+                    return true;
+            }
+        }
+        return false;
+    }
+    ModelHandlerService.Panes TargetPane;//current active menu
+
+    //attempts to navigate to different menu, and validates accordingly
+    async Task TryNavigateToPane(ModelHandlerService.Panes targetPane)
+    {
+        var model = ModelHandlerService.CurrentModel;
+        if(model.ModelStatusId == Model.EmptyModelStatusId)
+        {
+            if(targetPane != ModelHandlerService.Panes.Manage && targetPane != ModelHandlerService.Panes.ModelList)
+            {
+                //dynamic way of setting modal properties
+                NavigationControlModal.SetTitle(@<text>Message</text>);
+                NavigationControlModal.SetBody(@<text>You must complete 1. Define Variables before proceeding to this step</text>);
+                NavigationControlModal.SetFooter(@<button class="btn btn-danger sue" @onclick="NavigationControlModal.Close">Close</button>);
+                NavigationControlModal.Open();
+            }
+            else
+            {
+                TargetPane = targetPane;
+                NavigateToPane();
+            }
+        }
+        else if(model.ModelStatusId == Model.VariablesDefinedModelStatusId)
+        {
+            if (targetPane != ModelHandlerService.Panes.Manage && targetPane != ModelHandlerService.Panes.ModelList && targetPane != ModelHandlerService.Panes.Train)
+            {
+                var lgvm = await SueApiService.PostCheckUncalibratedSamples(HttpClient, 0, 0, ModelHandlerService.CurrentModel.ModelGuid, new List<SUM.Model.Components.Accessories.ParameterFilter>());
+                //dynamic way of setting modal properties
+
+                NavigationControlModal.SetTitle(@<text>Message</text>);
+                if(lgvm.TotalSamplesCount > 0)
+                {
+                    NavigationControlModal.SetBody(@<text>In order to move past menu 2, you must have a built model. Go to menu 2.4 to build model before proceeding.</text>);
+                }
+                else
+                {
+                    NavigationControlModal.SetBody(@<text>Please add some samples (answer some questions) and build before trying to move past menu 2.</text>);
+                }
+                NavigationControlModal.SetFooter(@<button class="btn btn-danger sue" @onclick="NavigationControlModal.Close">Close</button>);
+                NavigationControlModal.Open();
+            }
+            else
+            {
+                TargetPane = targetPane;
+                NavigateToPane();
+            }
+        }
+        else if(model.ModelStatusId == Model.TrainedModelStatusId)
+        {
+            if(ModelHandlerService.CurrentPane != ModelHandlerService.Panes.Calibrate || ModelHandlerService.CalibrationSaved)
+            {
+                TargetPane = targetPane;
+                NavigateToPane();
+            }
+            else
+            {
+                TargetPane = targetPane;
+                //dynamic way of setting modal properties
+                NavigationControlModal.SetTitle(@<text>Confirm</text>);
+                NavigationControlModal.SetBody(@<text>You have not saved your calibration. Continue without saving?</text>);
+                NavigationControlModal.SetFooter(builder =>
+                {
+                    builder.OpenElement(0, "button");
+                    builder.AddAttribute(1, "class", "btn btn-primary sue");
+                    builder.AddAttribute(2, "onclick", EventCallback.Factory.Create(this, ()=> { NavigationControlModal.Close(); NavigateToPane(); })) ;
+                    builder.AddContent(3, "Yes");
+                    builder.CloseElement();
+                    builder.OpenElement(0, "button");
+                    builder.AddAttribute(1, "class", "btn btn-danger sue");
+                    builder.AddAttribute(2, "onclick", EventCallback.Factory.Create(this, NavigationControlModal.Close));
+                    builder.AddContent(3, "No");
+                    builder.CloseElement();
+                });
+                NavigationControlModal.Open();
+            }
+        }
+        else {
+            NavigationManager.NavigateTo("Manage");
+        }
+    }
+    //does the navigation between menus
+    void NavigateToPane()
+    {
+        switch (TargetPane)
+        {
+            case ModelHandlerService.Panes.ModelList:
+                NavigationManager.NavigateTo("Models");
+                break;
+            case ModelHandlerService.Panes.Manage:
+                NavigationManager.NavigateTo("Manage");
+                break;
+            case ModelHandlerService.Panes.Train:
+                NavigationManager.NavigateTo("Train");
+                break;
+            case ModelHandlerService.Panes.Visualise:
+                NavigationManager.NavigateTo("Visualise");
+                break;
+            case ModelHandlerService.Panes.Use:
+                NavigationManager.NavigateTo("Use");
+                break;
+            case ModelHandlerService.Panes.Calibrate:
+                NavigationManager.NavigateTo("CalibrateLog");
+                break;
+        }
+    }
+}

@@ -1,0 +1,5 @@
+﻿@inherits NavLink
+<a @attributes="@AdditionalAttributes" class="@CssClass" @onclick:preventDefault>
+    @ChildContent
+</a>
+<!-- This is used to look like a navlink, but to allow you to override the onclick, especially if you need to do validation --> 

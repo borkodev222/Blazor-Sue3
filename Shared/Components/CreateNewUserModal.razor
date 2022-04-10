@@ -1,0 +1,70 @@
+﻿@inject IToastService ToastService
+@inject SueApiService SueApiService
+@inject HttpClient HttpClient
+<Modal @ref="createUserModal">
+    <Title>
+        New User
+    </Title>
+    <Body>
+        <div class="col">
+            <div class="form-group form-row">
+                <label for="unlockCode" class="font-weight-bold col col-form-label">Unlock Code</label>
+                <input class="sue col" id="unlockCode" type="text" @bind-value="unlockCode" autocomplete="off" />
+            </div>
+            <div class="form-group form-row">
+                <label for="userid" class="font-weight-bold col col-form-label">Username</label>
+                <input class="sue col" id="userid" type="text" @bind-value="user.UserId" autocomplete="off" />
+            </div>
+            <div class="form-group form-row">
+                <label for="description" class="font-weight-bold col col-form-label">Description</label>
+                <input class="sue col" id="description" type="text" @bind-value="user.Description" autocomplete="off" />
+            </div>
+            <div class="form-group form-row">
+                <label for="userpassword" class="font-weight-bold col col-form-label">Password</label>
+                <input class="sue col" id="userpassword" type="text" @bind-value="user.Password" autocomplete="off" />
+            </div>
+            <div class="form-group form-row">
+                <label for="mailaddress" class="font-weight-bold col col-form-label">Mail Address</label>
+                <input class="sue col" id="mailaddress" type="email" @bind-value="user.MailAddress" autocomplete="off" />
+            </div>
+        </div>
+    </Body>
+    <Footer>
+        <button type="button" class="btn btn-primary sue" @onclick="PostCreateUser">Create</button>
+        <button type="button" class="btn btn-danger sue" @onclick="createUserModal.Close">Cancel</button>
+    </Footer>
+</Modal>
+@code {
+    Modal createUserModal { get; set; }
+    string unlockCode;
+    SUM.Model.Authentication.User user = new SUM.Model.Authentication.User();
+
+    async Task PostCreateUser()
+    {
+        createUserModal.Close();
+        if (unlockCode == "AT3am")
+        {
+            user.IsEnabled = true;
+            var opresult = await SueApiService.PostSaveUser(HttpClient, user);
+            if (opresult.IsError)
+            {
+                ToastService.ShowError(opresult.Result);
+            }
+            else
+            {
+                ToastService.ShowSuccess(opresult.Result);
+            }
+        }
+        else
+        {
+            ToastService.ShowError("Invalid Unlock Code");
+        }
+    }
+
+    public void Open()
+    {
+        unlockCode = string.Empty;
+        user = new SUM.Model.Authentication.User();
+        createUserModal.Open();
+    }
+}

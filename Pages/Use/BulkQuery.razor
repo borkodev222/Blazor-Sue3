@@ -1,0 +1,446 @@
+﻿@page "/Use/BulkQuery"
+@inject HttpClient HttpClient
+@inject SueApiService SueApiService
+@inject ModelHandlerService ModelHandlerService
+@inject IToastService ToastService
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@using SUM.Model.Components.Accessories
+@using SUM.Model.Components.Physical
+@using SUM.Model.Components.Descriptive
+
+<!-- This is the submenu for querying the model in bulk: import queries, generates import template, displaying the logs, results and mfe -->
+
+<style>
+    .WrongSample {
+        background-color: rgb(255 0 0 / 10%);
+    }
+</style>
+@if (loading)
+{
+    <div class="modal d-inline" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content border-0">
+                <div class="modal-body">
+                    <div class="d-flex justify-content-center">
+                        <div class="spinner-border" role="status">
+                            <span class="sr-only">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <SueLog @ref="log" prediction="currentQuery"/>
+    <div class="row overflow-auto" style="margin-left:3vw;margin-right:3vw;margin-top:10vh;padding:1rem;margin-bottom:2rem;">
+        @if (showResults)
+        {
+            <div class="col">
+                <div class="justify-content-center">
+                    <div id="test-results">
+                        <div class="form-group">
+                            <button type="button" class="btn btn-primary sue" @onclick="()=> { showResults = false; queryPredictions = new List<PredictedQuery>(); }">New Bulk Query</button>
+                        </div>
+                        <div class="table-responsive form-group">
+                            <table class="table table-hover table-bordered">
+                                <thead class="thead">
+                                    <tr>
+                                        @foreach (var parameter in Model.Parameters)
+                                        {
+                                            <th>@parameter.Name</th>
+                                        }
+                                        <th>Sue Decision</th>
+                                        @if (includeOut)
+                                        {
+                                            <th>User Decision</th>
+                                            <th></th>
+                                        }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var prediction in queryPredictions)
+                                    {
+                                        <tr @onclick="() => { currentQuery = prediction; log.Open(); }">
+                                            @foreach (var sampleValue in prediction.SampleValues)
+                                            {
+                                                var parameter = Model.Parameters.Find(p => p.ParameterGuid == sampleValue.ParameterGuid);
+                                                if (parameter.IsNumeric)
+                                                {
+                                                    <td>@sampleValue.Value</td>
+                                                }
+                                                else
+                                                {
+                                                    <td>@parameter.Categories.Find(c => c.CategoryGuid == Guid.Parse(sampleValue.Value)).Value</td>
+                                                }
+                                            }
+                                            @if (Model.OutputParameter.IsNumeric)
+                                            {
+                                                <td>@prediction.OutputValue.SueValue</td>
+                                                if (includeOut)
+                                                {
+                                                    <td>@prediction.OutputValue.Value</td>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                if (prediction.InvalidatingRuleGuid is not null && prediction.InvalidatingRuleGuid != Guid.Empty)
+                                                {
+                                                    <td>@prediction.OutputValue.SueValue</td>
+                                                }
+                                                else
+                                                {
+                                                    <td>@Model.OutputParameter.Categories.Find(c => c.CategoryGuid == Guid.Parse(prediction.OutputValue.SueValue)).Value</td>
+                                                }
+                                                if (includeOut)
+                                                {
+                                                    <td>@Model.OutputParameter.Categories.Find(c => c.CategoryGuid == Guid.Parse(prediction.OutputValue.Value)).Value</td>
+                                                }
+                                            }
+                                            @if (includeOut)
+                                            {
+                                                @if (prediction.OutputValue.Value == prediction.OutputValue.SueValue)
+                                                {
+                                                    <td>&#x2714</td>
+                                                }
+                                                else
+                                                {
+                                                    <td>&#x2718</td>
+                                                }
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        @if (includeOut)
+                        {
+                            <div class="form-group">
+                                <table class="table table-hover table-bordered">
+                                    <tbody>
+                                        <tr>
+                                            <td class="font-weight-bold">Mean Forecasting Error:</td>
+                                            <td>@testMFE%</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                    <div class="form-group">
+                        <button type="button" class="btn btn-primary sue" @onclick="ExportResults">Export Results</button>
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="col form-group">
+                <label type="button" class="btn btn-primary sue m-0" for="customFile">Choose file</label>
+                <InputFile class="invisible" style="position:absolute;top:0px;right:0px;" id="customFile" accept=".csv" OnChange="OnInputFileChange" />
+                <button type="button" class="btn btn-primary sue" disabled="@(!readyForQuery)" @onclick="QuerySamples">Query</button>
+                <div class="custom-control custom-switch float-right">
+                    <input type="checkbox" class="custom-control-input" id="customSwitch1" @bind="includeOut">
+                    <label class="custom-control-label" for="customSwitch1">Include Outcome</label>
+                </div>
+            </div>
+            <table class="table table-hover table-bordered">
+                <thead class="thead">
+                    <tr>
+                        <th colspan="@(3 + Model.Parameters.Count)">
+                            <Pagination ListCount="@ListCount" @bind-PageIndex="@PageIndex" ItemsPerPage="@ItemsPerPage" ItemsPerPageChanged="ItemsPerPageChanged" />
+                        </th>
+                    </tr>
+                    <tr>
+                        <th></th>
+                        <th>#</th>
+                        @foreach (var parameter in Model.Parameters)
+                        {
+                            <th>@parameter.Name</th>
+                        }
+                        @if (includeOut) { 
+                            <th>@Model.OutputParameter.Name</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var validatedSample in ValidatedSamples.Skip(PageIndex * ItemsPerPage).Take(ItemsPerPage))
+                    {
+                        <tr>
+                            @if (validatedSample.IsCorrect)
+                            {
+                                <td>&#x2714;</td>
+                                var csi = 1;
+                                @foreach (var value in validatedSample.CorrectSample)
+                                {
+                                    @if (includeOut || csi++ != validatedSample.CorrectSample.Count)
+                                    {
+                                    <td>@value</td>
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                <td>&#x2718;</td>
+                                var wsi = 1;
+                                @foreach (var value in validatedSample.WrongSample)
+                                {
+                                    @if (includeOut || wsi++ != validatedSample.WrongSample.Count)
+                                    {
+                                    <td class="@(value.Item2 ? "WrongSample" : string.Empty)">@value.Item1</td>
+                                    }
+                                }
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <div class="col form-group">
+                <button type="button" class="btn btn-primary sue" @onclick="GenerateTemplate">Generate Query Template</button>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        loading = true;
+        if (SueApiService.LoggedIn)
+        {
+            if (ModelHandlerService.CurrentModel is not null)
+            {
+                ModelHandlerService.CurrentPane = ModelHandlerService.Panes.Use;
+                ModelHandlerService.CurrentModel = await SueApiService.GetModel(HttpClient, ModelHandlerService.CurrentModel.ModelGuid);
+                loading = false;
+            }
+            else
+            {
+                NavigationManager.NavigateTo("Models");
+            }
+        }
+        else
+        {
+            NavigationManager.NavigateTo("");
+        }
+    }
+    async Task OnInputFileChange(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        ext = System.IO.Path.GetExtension(file.Name);
+        filename = System.IO.Path.GetFileNameWithoutExtension(file.Name);
+        var fs = file.OpenReadStream();
+        var binary = new byte[file.Size];
+        await fs.ReadAsync(binary);
+        filestring = System.Text.Encoding.UTF8.GetString(binary);
+        ValidatedSamples = new List<ValidatedSample>();
+        var validationResult = await SueApiService.PostBulkValidateQueries(HttpClient, ModelGuid, filestring);
+
+        foreach (var wrongsample in validationResult.WrongSamples)
+        {
+            var ws = new ValidatedSample();
+            wrongsample[0] = new Tuple<string, bool>((int.Parse(wrongsample[0].Item1) + 1).ToString(), wrongsample[0].Item2);
+            ws.WrongSample = wrongsample;
+            ws.IsCorrect = false;
+            ValidatedSamples.Add(ws);
+        }
+        foreach (var correctsample in validationResult.CorrectSamples)
+        {
+            var cs = new ValidatedSample();
+            correctsample[0] = (int.Parse(correctsample[0]) + 1).ToString();
+            cs.CorrectSample = correctsample;
+            cs.IsCorrect = true;
+            ValidatedSamples.Add(cs);
+        }
+        if (validationResult.IsError)
+        {
+            readyForQuery = false;
+            ToastService.ShowWarning(validationResult.Result);
+        }
+        else
+        {
+            readyForQuery = true;
+        }
+        StateHasChanged();
+    }
+    async Task QuerySamples()
+    {
+        await SueApiService.PostBulkPrepareQueries(HttpClient, ModelGuid, filestring);
+        filestring = string.Empty;
+        ext = string.Empty;
+        filename = string.Empty;
+        readyForQuery = false;
+        ValidatedSamples = new List<ValidatedSample>();
+        bool queriesFinished = false;
+        while (!queriesFinished)
+        {
+            await Task.Delay(300);
+            var percentage = await SueApiService.GetPercentage(HttpClient, SUM.Model.Components.Accessories.AsynchronousOperationManager.AsynchronousOperationType.BulkQuery);
+            if (percentage == 100)
+                queriesFinished = true;
+        }
+        var result = await SueApiService.GetBulkPrepareQueriesResult(HttpClient);
+        var queryPredictionsJson = ((System.Text.Json.JsonElement)result.ValidatedPayload).GetRawText();
+        queryPredictions = System.Text.Json.JsonSerializer.Deserialize<List<PredictedQuery>>(queryPredictionsJson);
+        if (includeOut)
+            testMFE = calculateMFE();
+        showResults = true;
+    }
+    async Task GenerateTemplate()
+    {
+        System.Text.StringBuilder stringBuilder = new System.Text.StringBuilder();
+        foreach (var parameter in Model.Parameters)
+        {
+            stringBuilder.Append(parameter.Name);
+            stringBuilder.Append(',');
+
+        }
+        if (includeOut)
+            stringBuilder.Append(Model.OutputParameter.Name);
+        var name = Model.Name + " - Query Template.csv";
+        await JSRuntime.InvokeVoidAsync("downloadCSV", name, stringBuilder.ToString());
+    }
+    bool loading = true;
+    bool readyForQuery = false;
+    bool includeOut = true;
+    bool showResults = false;
+    SueLog log;
+    List<PredictedQuery> queryPredictions;
+    PredictedQuery currentQuery;
+    double testMFE = 0;
+    string ext;
+    string filename;
+    string filestring;
+    Guid ModelGuid => ModelHandlerService.CurrentModel.ModelGuid;
+    Model Model => ModelHandlerService.CurrentModel;
+    List<ValidatedSample> ValidatedSamples = new List<ValidatedSample>();
+    public class ValidatedSample
+    {
+        public bool IsCorrect { get; set; }
+        public List<string> CorrectSample { get; set; }
+        public List<Tuple<string, bool>> WrongSample { get; set; }
+    }
+    int ItemsPerPage { get; set; } = 10;
+    void ItemsPerPageChanged(int newItemsPerPage)
+    {
+        ItemsPerPage = newItemsPerPage;
+        StateHasChanged();
+    }
+    int ListCount
+    {
+        get
+        {
+            var x = ValidatedSamples.Count();
+            PageIndex = PageIndex >= (x - 1) / ItemsPerPage ? (x - 1) / ItemsPerPage : PageIndex;
+            return x;
+        }
+        set
+        {
+            _ = value;
+        }
+    }
+    int PageIndex { get; set; } = 0;
+    async Task ExportResults()
+    {
+        System.Text.StringBuilder csvContent = new System.Text.StringBuilder();
+        csvContent.Append($"Sample Id,");
+        foreach (var parameter in Model.Parameters)
+        {
+            csvContent.Append($"{parameter.Name},");
+        }
+        if (includeOut)
+            csvContent.Append($"{Model.OutputParameter.Name},");
+        csvContent.Append($"Sue Decision \n");
+        var x = 1;
+        foreach (var prediction in queryPredictions)
+        {
+            csvContent.Append($"{x++},");
+            foreach (var sampleValue in prediction.SampleValues)
+            {
+                var parameter = Model.Parameters.Find(p => p.ParameterGuid == sampleValue.ParameterGuid);
+                if (parameter.IsNumeric)
+                    csvContent.Append($"{sampleValue.Value},");
+                else
+                {
+                    csvContent.Append($"{parameter.Categories.Find(c => c.CategoryGuid == Guid.Parse(sampleValue.Value)).Value},");
+                }
+            }
+            if (Model.OutputParameter.IsNumeric)
+            {
+                if (includeOut)
+                    csvContent.Append($"{prediction.OutputValue.Value},");
+                csvContent.Append($"{prediction.OutputValue.SueValue}\n");
+            }
+            else
+            {
+                if (includeOut)
+                    csvContent.Append($"{Model.OutputParameter.Categories.Find(c => c.CategoryGuid == Guid.Parse(prediction.OutputValue.Value)).Value},");
+                if (prediction.InvalidatingRuleGuid is not null && prediction.InvalidatingRuleGuid != Guid.Empty)
+                    csvContent.Append($"{prediction.OutputValue.SueValue}\n");
+                else
+                    csvContent.Append($"{Model.OutputParameter.Categories.Find(c => c.CategoryGuid == Guid.Parse(prediction.OutputValue.SueValue)).Value}\n");
+            }
+        }
+        var name = Model.Name + " - Bulk Query Results.csv";
+        await JSRuntime.InvokeVoidAsync("downloadCSV", name, csvContent.ToString());
+    }
+    double calculateMFE()
+    {
+        var MFE = 0d;
+        if (Model.OutputParameter.IsNumeric)
+        {
+            foreach (var prediction in queryPredictions)
+            {
+                if (prediction.OutputValue.SueValue != prediction.OutputValue.Value)
+                {
+                    if (double.TryParse(prediction.OutputValue.SueValue, out double doubleSueValue))
+                    {
+                        double rawValueAnswer = (double.Parse(prediction.OutputValue.Value) - Model.OutputParameter.LowerValue) / (Model.OutputParameter.UpperValue - Model.OutputParameter.LowerValue);
+                        double rawValuePrediction = (doubleSueValue - Model.OutputParameter.LowerValue) / (Model.OutputParameter.UpperValue - Model.OutputParameter.LowerValue);
+                        MFE += Math.Abs(rawValueAnswer - rawValuePrediction);
+                    }
+                    else
+                    {
+                        MFE += 1;
+                    }
+                }
+            }
+        }
+        else
+        {
+            if (Model.OutputParameter.IsOrdinal)
+            {
+                foreach (var prediction in queryPredictions)
+                {
+                    if (prediction.OutputValue.SueValue != prediction.OutputValue.Value)
+                    {
+                        if (prediction.InvalidatingRuleGuid is not null && prediction.InvalidatingRuleGuid != Guid.Empty)
+                        {
+                            MFE += 1;
+                        }
+                        else
+                        {
+                            var catCount = Model.OutputParameter.Categories.Count;
+                            double rawValueAnswer = Model.OutputParameter.Categories.FindIndex(c => c.CategoryGuid == Guid.Parse(prediction.OutputValue.Value)) / (catCount - 1);
+                            double rawValuePrediction = Model.OutputParameter.Categories.FindIndex(c => c.CategoryGuid == Guid.Parse(prediction.OutputValue.SueValue)) / (catCount - 1); ;
+                            MFE += Math.Abs(rawValueAnswer - rawValuePrediction);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                foreach (var prediction in queryPredictions)
+                {
+                    if (prediction.OutputValue.SueValue != prediction.OutputValue.Value)
+                    {
+                        MFE += 1;
+                    }
+                }
+            }
+        }
+        return Math.Round((MFE * 100) / queryPredictions.Count, 2);
+    }
+}

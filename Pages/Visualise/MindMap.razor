@@ -1,0 +1,95 @@
+﻿@page "/visualise/mindmap"
+@layout MainLayout
+@inject HttpClient httpClient
+@inject NavigationManager NavigationManager
+@inject Sue3.Web.Blazor.Data.SueApiService SueApiService
+@inject Sue3.Web.Blazor.Data.ModelHandlerService ModelHandlerService
+
+<!-- This is the submenu for visualise: displays the mind map-->
+
+@if (loading)
+{
+    <div class="modal d-inline" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content border-0">
+                <div class="modal-body">
+                    <div class="d-flex justify-content-center">
+                        <div class="spinner-border" role="status">
+                            <span class="sr-only">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div style="margin-left:3vw;margin-right:3vw;margin-top:20vh">
+        <MindMapTreeContainer @ref="myTreeNodeContainer"
+                              Options="@options"
+                              Data="@treeData"
+                              OnShow="@OnShowTree"
+                              style="background:#FCFCFC;" />
+    </div>
+}
+@code{
+    protected override async Task OnInitializedAsync()
+    {
+        if (SueApiService.LoggedIn)
+        {
+            if (ModelHandlerService.CurrentModel is not null)
+            {
+                ModelHandlerService.CurrentPane = ModelHandlerService.Panes.Visualise;
+                ModelHandlerService.CurrentModel = await SueApiService.GetModel(httpClient, ModelHandlerService.CurrentModel.ModelGuid);
+                treeData = new MindMapTreeData()
+                {
+                    RootNode = new MindMapTreeNode()
+                    {
+                        Id = "Output",
+                        Topic = ModelHandlerService.CurrentModel.OutputParameter.Name,
+                        Children = new List<MindMapTreeNode>(),
+                    }
+                };
+                var x = 0;
+                foreach(var parameter in model.Parameters) {
+                    treeData.RootNode.Children.Add(new MindMapTreeNode()
+                    {
+                        Id = parameter.Name,
+                        Topic = parameter.Name,
+                        Direction = x++%2==0? MindMapNodeDirection.Left: MindMapNodeDirection.Right,
+                    });
+                }
+                loading = false;
+            }
+            else
+            {
+                NavigationManager.NavigateTo("Models");
+            }
+        }
+        else
+        {
+            NavigationManager.NavigateTo("");
+        }
+    }
+    bool loading = true;
+    SUM.Model.Components.Descriptive.Model model => ModelHandlerService.CurrentModel;
+
+    private MindMapTreeContainer myTreeNodeContainer;
+
+    // Define the MindMapOptions
+    readonly MindMapOptions options = new MindMapOptions()
+    {
+        Editable = false,
+        Theme = MindMapThemes.Primary
+    };
+
+    // Define some MindMapTreeData
+    MindMapTreeData treeData;
+
+    async Task OnShowTree(EventArgs args)
+    {
+        // When the MindMap is displayed, expand all nodes
+        await myTreeNodeContainer.Expand();
+    }
+}

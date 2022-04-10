@@ -1,0 +1,12 @@
+﻿<!--This just sets the basic configs around the contents of the popup message forms-->
+@inherits LayoutComponentBase
+@using Blazored.Toast.Configuration
+<BlazoredToasts Position="ToastPosition.TopRight"
+                Timeout="3" />
+<div class="page">
+    <div class="main">
+        <div class="content" style="padding:0;padding-left:0.95rem!important;padding-right:0.95rem!important">
+            @Body  <!--This will inherit the actual style sheet and contents of the body-->
+        </div>
+    </div>
+</div>

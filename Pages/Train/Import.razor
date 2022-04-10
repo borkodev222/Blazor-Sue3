@@ -1,0 +1,181 @@
+﻿@page "/Train/Import"
+@inject HttpClient HttpClient
+@inject SueApiService SueApiService
+@inject ModelHandlerService ModelHandlerService
+@inject IToastService ToastService
+@inject IJSRuntime JSRuntime
+
+<!-- This is the submenu for importing samples and training the model. Also generates samples and import template-->
+
+<style>
+    .WrongSample {
+        background-color:rgb(255 0 0 / 10%);
+    }
+</style>
+<div class="row overflow-auto" style="margin-left:3vw;margin-right:3vw;margin-top:10vh;padding:1rem;margin-bottom:2rem;">
+    <div class="col form-group">
+        <label type="button" class="btn btn-primary sue m-0" for="customFile">Choose file</label>
+        <InputFile class="invisible" style="position:absolute;top:0px;right:0px;" id="customFile" accept=".csv" OnChange="OnInputFileChange" />
+        <button type="button" class="btn btn-primary sue" disabled="@(!readyForImport)" @onclick="ImportSamples">Import</button>
+    </div>
+    <div class="table-responsive form-group">
+        <table class="table table-hover table-bordered">
+            <thead class="thead">
+                <tr>
+                    <th colspan="@(3+Model.Parameters.Count)">
+                        <Pagination ListCount="@ListCount" @bind-PageIndex="@PageIndex" ItemsPerPage="@ItemsPerPage" ItemsPerPageChanged="ItemsPerPageChanged" />
+                    </th>
+                </tr>
+                <tr>
+                    <th></th>
+                    <th>#</th>
+                    @foreach (var parameter in Model.Parameters)
+                    {
+                        <th>@parameter.Name</th>
+                    }
+                    <th>@Model.OutputParameter.Name</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var validatedSample in ValidatedSamples.Skip(PageIndex * ItemsPerPage).Take(ItemsPerPage))
+                {
+                    <tr>
+                        @if (validatedSample.IsCorrect)
+                        {
+                            <td>&#x2714;</td>
+                            @foreach (var value in validatedSample.CorrectSample)
+                            {
+                                <td>@value</td>
+                            }
+                        }
+                        else
+                        {
+                            <td>&#x2718;</td>
+                            @foreach (var value in validatedSample.WrongSample)
+                            {
+                                <td class="@(value.Item2?"WrongSample":string.Empty)">@value.Item1</td>
+                            }
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="col form-group">
+        <button type="button" class="btn btn-primary sue" @onclick="GenerateTemplate">Generate Import Template</button>
+    </div>
+    <div class="form-inline">
+        <input type="number" class="float-right form-control" @bind="GenerateSamplesCount" @onblur="()=> { if (GenerateSamplesCount < 1) GenerateSamplesCount = 1; }" min="1" style="width:10rem;margin-right:1rem;" />
+        <button type="button" class="float-right btn btn-primary sue" @onclick="GenerateSamples">Generate Samples</button>
+    </div>
+</div>
+            
+@code {
+    async Task OnInputFileChange(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        ext = System.IO.Path.GetExtension(file.Name);
+        filename = System.IO.Path.GetFileNameWithoutExtension(file.Name);
+        var fs = file.OpenReadStream();
+        var binary = new byte[file.Size];
+        await fs.ReadAsync(binary);
+        filestring = System.Text.Encoding.UTF8.GetString(binary);
+        ValidatedSamples = new List<ValidatedSample>();
+        var validationResult = await SueApiService.PostBulkValidateData(HttpClient, ModelGuid, filestring);
+
+        foreach (var wrongsample in validationResult.WrongSamples)
+        {
+            var ws = new ValidatedSample();
+            wrongsample[0] = new Tuple<string, bool>((int.Parse(wrongsample[0].Item1) + 1).ToString(), wrongsample[0].Item2);
+            ws.WrongSample = wrongsample;
+            ws.IsCorrect = false;
+            ValidatedSamples.Add(ws);
+        }
+        foreach (var correctsample in validationResult.CorrectSamples)
+        {
+            var cs = new ValidatedSample();
+            correctsample[0] = (int.Parse(correctsample[0]) + 1).ToString();
+            cs.CorrectSample = correctsample;
+            cs.IsCorrect = true;
+            ValidatedSamples.Add(cs);
+        }
+        if (validationResult.IsError)
+        {
+            readyForImport = false;
+            ToastService.ShowWarning(validationResult.Result);
+        }
+        else
+        {
+            readyForImport = true;
+        }
+        StateHasChanged();
+    }
+    async Task ImportSamples()
+    {
+        var opresult = await SueApiService.PostBulkImportData(HttpClient, ModelGuid, filestring);
+        if (opresult.IsError)
+        {
+            ToastService.ShowError(opresult.Error);
+        }
+        else
+        {
+            ToastService.ShowSuccess("Samples Imported");
+        }
+        readyForImport = false;
+        ext = string.Empty;
+        filename = string.Empty;
+        filestring = string.Empty;
+    }
+    async Task GenerateTemplate()
+    {
+        System.Text.StringBuilder stringBuilder = new System.Text.StringBuilder();
+        foreach(var parameter in Model.Parameters)
+        {
+            stringBuilder.Append(parameter.Name);
+            stringBuilder.Append(',');
+
+        }
+        stringBuilder.Append(Model.OutputParameter.Name);
+        var name = Model.Name + " - Import Template.csv";
+        await JSRuntime.InvokeVoidAsync("downloadCSV", name, stringBuilder.ToString());
+    }
+    async Task GenerateSamples()
+    {
+        var trainingSampleCSV = await SueApiService.GenerateTrainingSampleCSV(HttpClient,ModelGuid,GenerateSamplesCount);
+        var name = Model.Name + " - Generated Training Samples.csv";
+        await JSRuntime.InvokeVoidAsync("downloadCSV", name, trainingSampleCSV);
+    }
+    bool readyForImport = false;
+    string ext;
+    string filename;
+    string filestring;
+    Guid ModelGuid => ModelHandlerService.CurrentModel.ModelGuid;
+    SUM.Model.Components.Descriptive.Model Model => ModelHandlerService.CurrentModel;
+    List<ValidatedSample> ValidatedSamples = new List<ValidatedSample>();
+    public class ValidatedSample {
+        public bool IsCorrect { get; set; }
+        public List<string> CorrectSample { get; set; }
+        public List<Tuple<string, bool>> WrongSample { get; set; }
+    }
+    int ItemsPerPage { get; set; } = 10;
+    void ItemsPerPageChanged(int newItemsPerPage)
+    {
+        ItemsPerPage = newItemsPerPage;
+        StateHasChanged();
+    }
+    int ListCount
+    {
+        get
+        {
+            var x = ValidatedSamples.Count();
+            PageIndex = PageIndex >= (x - 1) / ItemsPerPage ? (x - 1) / ItemsPerPage : PageIndex;
+            return x;
+        }
+        set
+        {
+            _ = value;
+        }
+    }
+    int PageIndex { get; set; } = 0;
+    int GenerateSamplesCount { get; set; } = 1;
+}

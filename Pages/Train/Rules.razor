@@ -1,0 +1,260 @@
+﻿@page "/Train/Rules"
+@layout MainLayout
+@inject HttpClient HttpClient
+@inject NavigationManager NavigationManager
+@inject SueApiService SueApiService
+@inject ModelHandlerService ModelHandlerService
+@inject IToastService ToastService
+@using SUM.Model.Components.Descriptive
+
+<!-- This is the submenu for rules: Manages showing the list of rules, and creating/editing rules-->
+
+@if (loading)
+{
+    <div class="modal d-inline" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content border-0">
+                <div class="modal-body">
+                    <div class="d-flex justify-content-center">
+                        <div class="spinner-border" role="status">
+                            <span class="sr-only">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="row justify-content-center overflow-auto" style="margin-left:3vw;margin-right:3vw;margin-top:10vh;padding:1rem;margin-bottom:2rem;">
+        <div class="col">
+            <div class="justify-content-center">
+                @if (showManageRule)
+                {
+                    <!-- this is a wrapper for editing/creating a rule -->
+                    <ManageRule IsExplicit="IsExplicit" Model="model" Rule="currentRule" Rules="rules" RuleSaved="RuleSaved" RuleCancelled="RuleCancelled" />
+                }
+                else
+                {
+                    <div class="col form-group">
+                        <button type="button" class="btn btn-primary sue" @onclick="AddExplicitRule">+Add Explicit Rule</button>
+                        <button type="button" class="btn btn-primary sue" @onclick="AddRelationship">+Add Relationship</button>
+                    </div>
+                    <section class="mt-2" id="no-more-tables">
+                        <table class="table table-hover table-bordered">
+                            <thead class="thead">
+                                <tr>
+                                    <th style="width:15%"></th>
+                                    <th style="width:5%">#</th>
+                                    <th style="width:70%">Name</th>
+                                    <th style="width:10%">Type</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var rule in rules)
+                                {
+                                    var IsExplict = rule is ExplicitRule;
+                                    <tr>
+                                        <td>
+                                            <a style='padding:5px' data-toggle='tooltip' title='Copy'>
+                                                <i class="oi oi-paperclip" @onclick="() => CopyRule(rule)" />
+                                            </a>
+                                            <a style='padding:5px' data-toggle='tooltip' title='Edit'>
+                                                <i class="oi oi-pencil" @onclick="()=> EditRule(rule)" />
+                                            </a>
+                                            <a style='padding:5px' data-toggle='tooltip' title='Delete'>
+                                                <i class="oi oi-trash" @onclick="()=> DeleteRule(rule)" />
+                                            </a>
+                                            <a style='padding:0.1rem;' data-toggle='tooltip' title='Move Up'>
+                                                <i class="oi oi-caret-top" @onclick="()=> SetRuleSort(rule.RuleGuid,rule.RuleSort-1)" />
+                                            </a>
+                                            <a style='padding:0.1rem;' data-toggle='tooltip' title='Move Down'>
+                                                <i class="oi oi-caret-bottom" @onclick="()=> SetRuleSort(rule.RuleGuid,rule.RuleSort+1)" />
+                                            </a>
+                                        </td>
+                                        <td>@rule.RuleSort</td>
+                                        <td>@rule.Name</td>
+                                        <td>@( IsExplict?"Explicit":"Relationship")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </section>
+                }
+            </div>
+        </div>
+    </div>
+}
+@code{
+    protected override async Task OnInitializedAsync()
+    {
+        loading = true;
+        showManageRule = false;
+        if (SueApiService.LoggedIn)
+        {
+            if (ModelHandlerService.CurrentModel is not null)
+            {
+                ModelHandlerService.CurrentPane = ModelHandlerService.Panes.Train;
+                ModelHandlerService.CurrentModel = await SueApiService.GetModel(HttpClient, ModelHandlerService.CurrentModel.ModelGuid);
+                loading = false;
+            }
+            else
+            {
+                NavigationManager.NavigateTo("Models");
+            }
+        }
+        else
+        {
+            NavigationManager.NavigateTo("");
+        }
+    }
+    Model model => ModelHandlerService.CurrentModel;
+    Guid ModelGuid => model.ModelGuid;
+    List<Rule> rules => ModelHandlerService.CurrentModel.Rules;
+    bool loading;
+    bool showManageRule;
+    bool IsExplicit;
+    Rule currentRule;
+    async Task RuleSaved()
+    {
+        loading = true;
+        showManageRule = false;
+        currentRule = null;
+        ModelHandlerService.CurrentModel = await SueApiService.GetModel(HttpClient, ModelHandlerService.CurrentModel.ModelGuid);
+        loading = false;
+    }
+    void RuleCancelled()
+    {
+        loading = true;
+        showManageRule = false;
+        currentRule = null;
+        loading = false;
+    }
+    void AddExplicitRule()
+    {
+        currentRule = new ExplicitRule()
+        {
+            ModelGuid = ModelGuid,
+            ParameterGuid = Guid.Empty,
+            OperatorTypeId = Rule.OperatorTypeIdEqual,
+            ForcedParameterGuid = Guid.Empty,
+            ForcedOperatorTypeId = Rule.OperatorTypeIdEqual,
+        };
+        IsExplicit = true;
+        showManageRule = true;
+    }
+    void AddRelationship()
+    {
+        currentRule = new RelationshipRule()
+        {
+            ModelGuid = ModelGuid,
+            OperatorTypeId = Rule.OperatorTypeIdEqual,
+            ParameterGuid = Guid.Empty,
+        };
+        IsExplicit = false;
+        showManageRule = true;
+    }
+    void duplicateRule(Rule rule)
+    {
+        var explicitRule = rule as ExplicitRule;
+        if (explicitRule != null)
+        {
+            currentRule = new ExplicitRule()
+            {
+                ForcedOperatorType = explicitRule.ForcedOperatorType,
+                ForcedOperatorTypeId = explicitRule.ForcedOperatorTypeId,
+                ForcedParameterGuid = explicitRule.ForcedParameterGuid,
+                ForcedReferenceParameterGuid = explicitRule.ForcedReferenceParameterGuid,
+                ForcedReferenceValueFloat = explicitRule.ForcedReferenceValueFloat,
+                ForcedReferenceValueGuid = explicitRule.ForcedReferenceValueGuid,
+            };
+            IsExplicit = true;
+        }
+        else
+        {
+            currentRule = new RelationshipRule();
+        }
+        currentRule.ModelGuid = ModelGuid;
+        currentRule.OperatorType = rule.OperatorType;
+        currentRule.OperatorTypeId = rule.OperatorTypeId;
+        currentRule.ParameterGuid = rule.ParameterGuid;
+        currentRule.ReferenceParameterGuid = rule.ReferenceParameterGuid;
+        currentRule.ReferenceValueFloat = rule.ReferenceValueFloat;
+        currentRule.ReferenceValueGuid = rule.ReferenceValueGuid;
+        currentRule.RuleGuid = Guid.Empty;
+        currentRule.Version = rule.Version;
+    }
+    void CopyRule(Rule rule)
+    {
+        duplicateRule(rule);
+        showManageRule = true;
+    }
+    void EditRule(Rule rule)
+    {
+        duplicateRule(rule);
+        currentRule.RuleGuid = rule.RuleGuid;
+        showManageRule = true;
+    }
+    async Task DeleteRule(Rule rule)
+    {
+        var opresult = await SueApiService.GetDeleteRule(HttpClient, rule.RuleGuid, ModelGuid);
+        if (!opresult.IsError)
+        {
+            await RuleSaved();
+        }
+        else
+        {
+            ToastService.ShowError(opresult.Error);
+        }
+    }
+    async Task SetRuleSort(Guid ruleGuid, int newSort)
+    {
+        loading = true;
+        var currentRule = rules.Find(r => r.RuleGuid == ruleGuid);
+        if (newSort > currentRule.RuleSort)
+        {
+            var maxSort = rules.Max(r => r.RuleSort);
+            if (currentRule.RuleSort < maxSort)
+            {
+
+                foreach (var rule in rules)
+                {
+                    if (rule.RuleSort > currentRule.RuleSort && rule.RuleSort <= newSort)
+                    {
+                        rule.RuleSort -= 1;
+                    }
+                }
+                currentRule.RuleSort = newSort;
+            }
+        }
+        else if (newSort < currentRule.RuleSort)
+        {
+            var minSort = rules.Min(r => r.RuleSort);
+            if (currentRule.RuleSort > minSort)
+            {
+                foreach (var rule in rules)
+                {
+                    if (rule.RuleSort < currentRule.RuleSort && rule.RuleSort >= newSort)
+                    {
+                        rule.RuleSort += 1;
+                    }
+                }
+                currentRule.RuleSort = newSort;
+            }
+        }
+        else
+        {
+            return;
+        }
+        if (currentRule is ExplicitRule)
+        {
+            await SueApiService.PostExplicitRule(HttpClient, currentRule as ExplicitRule);
+        }
+        else
+        {
+            await SueApiService.PostRelationship(HttpClient, currentRule as RelationshipRule);
+        }
+        await RuleSaved();
+    }
+}

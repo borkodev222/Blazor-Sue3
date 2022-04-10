@@ -1,0 +1,688 @@
+﻿@using SUM.Model.Components.Physical
+@using SUM.Model.Components.Descriptive
+@using SUM.Model.Components.Accessories
+@inject IToastService ToastService
+@inject ModelHandlerService ModelHandlerService
+@inject SueApiService SueApiService
+@inject HttpClient HttpClient
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+<Modal @ref="logModal" SueLog="true">
+    <Title>
+        Logic
+    </Title>
+    <Body>
+        @if (showAnswer)
+        {
+            @if (Editable && InvalidatingRule is null && ForcingRule is null && !Editing)
+            {
+                <div class="form-group">
+                    <button type="button" class="btn btn-primary sue float-right" @onclick="ChangeResult">Change the result</button>
+                </div>
+            }
+            <h4 class="sue-text">Query & Result:</h4>
+            <div class="form-group">
+                <div class="table-responsive">
+                    <table class="table table-hover table-bordered">
+                        <thead class="thead">
+                            <tr>
+                                @foreach (var parameter in model.Parameters)
+                                {
+                                    <th>@parameter.Name</th>
+                                }
+                                <th>@model.OutputParameter.Name</th>
+                                @if (Editing && !prediction.Neighbors.Any(n => n.Score == 100))
+                                {
+                                    <th class="invisible"></th>
+                                    <th colspan="2">Change Output</th>
+                                    <th>Add Sample</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                @foreach (var sampleValue in prediction.SampleValues)
+                                {
+                                    var parameter = model.Parameters.Find(p => p.ParameterGuid == sampleValue.ParameterGuid);
+                                    <td>@(parameter.IsNumeric ? sampleValue.Value : parameter.Categories.Find(c => c.CategoryGuid == Guid.Parse(sampleValue.Value)).Value)</td>
+                                }
+                                <td>
+                                    @if (model.OutputParameter.IsNumeric)
+                                    {
+                                        @prediction.OutputValue.SueValue
+                                    }
+                                    else
+                                    {
+                                        var canParse = Guid.TryParse(prediction.OutputValue.SueValue, out Guid catGuid);
+                                        if (canParse)
+                                        {
+                                            @model.OutputParameter.Categories.Find(c => c.CategoryGuid == catGuid).Value
+                                        }
+                                        else
+                                        {
+                                            @prediction.OutputValue.SueValue
+                                        }
+                                    }
+                                </td>
+                                @if (Editing && !prediction.Neighbors.Any(n => n.Score == 100))
+                                {
+                                    <td class="invisible"></td>
+                                    @if (model.OutputParameter.IsNumeric)
+                                    {
+                                        <td>
+                                            <input class="form-control w-auto" type="number" @bind="newSample.OutputValue.Value" @bind:event="oninput"
+                                                   @onblur="()=> { ValidateNumber(model.OutputParameter,newSample.OutputValue); }" min="@model.OutputParameter.LowerValue" max="@model.OutputParameter.UpperValue" step="@model.OutputParameter.Increment" />
+                                        </td>
+                                        <td>
+                                            <input class="custom-range align-items-end w-auto" type="range" @bind-value="newSample.OutputValue.Value" @bind-value:event="oninput"
+                                                   min="@model.OutputParameter.LowerValue" max="@model.OutputParameter.UpperValue" step="@model.OutputParameter.Increment" />
+                                        </td>
+                                    }
+                                    else
+                                    {
+                                        <td colspan="2">
+                                            <CategoryContainer  MaxCategoriesLength="20" Parameter="model.OutputParameter" SampleValue="newSample.OutputValue"/>
+                                            @*<select class="custom-select w-auto" @bind="newSample.OutputValue.Value">
+                                                @foreach (var cat in model.OutputParameter.Categories)
+                                                {
+                                                    <option value="@cat.CategoryGuid.ToString()">
+                                                        @cat.Value
+                                                    </option>
+                                                }
+                                            </select>*@
+                                        </td>
+                                    }
+                                    <td class="text-center">
+                                        @if (newSampleSaved)
+                                        {
+                                            <button type="button" class="btn btn-primary sue" @onclick="()=> {newSample.OutputValue.Value = prediction.OutputValue.SueValue; newSampleSaved = false; }">Undo</button>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="btn btn-primary sue" @onclick="()=> { newSampleSaved = true; }" disabled="@(newSample.OutputValue.Value==prediction.OutputValue.SueValue)">Save</button>
+                                        }
+                                    </td>
+                                }
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <hr />
+            <h4 class="sue-text">Voting Mode: @prediction.VotingMode</h4>
+            <hr />
+            @if (prediction.Neighbors.Count > 0)
+            {
+                <h4 class="sue-text">Neighbors/Points Used:</h4>
+                <div class="form-group">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-bordered">
+                            <thead class="thead">
+                                <tr>
+                                    <th>#</th>
+                                    @foreach (var parameter in model.Parameters)
+                                    {
+                                        <th>@parameter.Name</th>
+                                    }
+                                    <th>@model.OutputParameter.Name</th>
+                                    <th>Proximity</th>
+                                    @if (Editing)
+                                    {
+                                        <th class="invisible"></th>
+                                        <th colspan="2">Change Output</th>
+                                        <th>Add Sample</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var neighbor in prediction.Neighbors)
+                                {
+                                    <tr>
+                                        <td>@(neighbor.SampleId+1)</td>
+                                        @foreach (var sampleValue in neighbor.SampleValues)
+                                        {
+                                            var parameter = model.Parameters.Find(p => p.ParameterGuid == sampleValue.ParameterGuid);
+                                            <td>@(parameter.IsNumeric ? sampleValue.Value : parameter.Categories.Find(c => c.CategoryGuid == Guid.Parse(sampleValue.Value)).Value)</td>
+                                        }
+                                        <td>
+                                            @(model.OutputParameter.IsNumeric ?
+                                            neighbor.OutputValue.Value :
+                                            model.OutputParameter.Categories.Find(c => c.CategoryGuid == Guid.Parse(neighbor.OutputValue.Value)).Value)
+                                        </td>
+                                        <td>@(Math.Round(neighbor.Score,2))%</td>
+                                        @if (Editing)
+                                        {
+                                            var changeSample = changeSamples.Find(s => s.SampleId == neighbor.SampleId);
+                                            <td class="invisible"></td>
+                                            @if (model.OutputParameter.IsNumeric)
+                                            {
+                                                <td>
+                                                    <input class="form-control w-auto" type="number" @bind="changeSample.OutputValue.Value" @bind:event="oninput"
+                                                           @onblur="()=> { ValidateNumber(model.OutputParameter,changeSample.OutputValue); }" min="@model.OutputParameter.LowerValue" max="@model.OutputParameter.UpperValue" step="@model.OutputParameter.Increment" />
+                                                </td>
+                                                <td>
+                                                    <input class="custom-range align-items-end w-auto" type="range" @bind-value="changeSample.OutputValue.Value" @bind-value:event="oninput"
+                                                           min="@model.OutputParameter.LowerValue" max="@model.OutputParameter.UpperValue" step="@model.OutputParameter.Increment" />
+                                                </td>
+                                            }
+                                            else
+                                            {
+                                                <td colspan="2">
+                                                    <CategoryContainer  MaxCategoriesLength="20" Parameter="model.OutputParameter" SampleValue="changeSample.OutputValue"/>
+                                                    @*<select class="custom-select w-auto" @bind="changeSample.OutputValue.Value">
+                                                        @foreach (var cat in model.OutputParameter.Categories)
+                                                        {
+                                                            <option value="@cat.CategoryGuid.ToString()">
+                                                                @cat.Value
+                                                            </option>
+                                                        }
+                                                    </select>*@
+                                                </td>
+                                            }
+                                            <td class="text-center">
+                                                @if (changeSamplesSaved[neighbor.SampleId])
+                                                {
+                                                    <button type="button" class="btn btn-primary sue" @onclick="()=> {changeSample.OutputValue.Value = neighbor.OutputValue.Value; changeSamplesSaved[neighbor.SampleId] = false; }">Undo</button>
+                                                }
+                                                else
+                                                {
+                                                    <button type="button" class="btn btn-primary sue" @onclick="()=> { changeSamplesSaved[neighbor.SampleId] = true; }" disabled="@(changeSample.OutputValue.Value == neighbor.OutputValue.Value)">Save</button>
+                                                }
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <hr />
+            }
+            @if (InvalidatingRule is not null && InvalidatingRule is RelationshipRule)
+            {
+                <h4 class="sue-text">Relationships:</h4>
+                <div class="form-group">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-bordered">
+                            <tbody>
+                                <tr>
+                                    <td class="font-weight-bold">@(model.Parameters.Find(p=>p.ParameterGuid == InvalidatingRule.ParameterGuid).Name)</td>
+                                    <td>@InvalidatingRule.OperatorTypeId</td>
+                                    @if (InvalidatingRule.ReferenceParameterGuid.HasValue)
+                                    {
+                                        <td class="font-weight-bold">@(model.Parameters.Find(p=>p.ParameterGuid == InvalidatingRule.ReferenceParameterGuid).Name)</td>
+                                    }
+                                    else if (InvalidatingRule.ReferenceValueGuid.HasValue)
+                                    {
+                                        <td class="font-weight-bold">
+                                            @(model.Parameters.Find(p=>p.ParameterGuid == InvalidatingRule.ParameterGuid)
+                                            .Categories.Find(c=>c.CategoryGuid== InvalidatingRule.ReferenceValueGuid).Value)
+                                        </td>
+                                    }
+                                    else
+                                    {
+                                        <td class="font-weight-bold">@InvalidatingRule.ReferenceValueFloat</td>
+                                    }
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <hr />
+            }
+            @if (InvalidatingRule is not null && InvalidatingRule is ExplicitRule || ForcingRule is not null && ForcingRule is ExplicitRule)
+            {
+                var explicitRule = InvalidatingRule is not null ? InvalidatingRule as ExplicitRule : ForcingRule as ExplicitRule;
+                <h4 class="sue-text">Explicit Rules:</h4>
+                <div class="form-group">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-bordered">
+                            <tbody>
+                                <tr>
+                                    <td>If</td>
+                                    <td class="font-weight-bold">@(model.Parameters.Find(p=>p.ParameterGuid == explicitRule.ParameterGuid).Name)</td>
+                                    <td>@explicitRule.OperatorTypeId</td>
+                                    @if (explicitRule.ReferenceParameterGuid.HasValue)
+                                    {
+                                        <td class="font-weight-bold">@(model.Parameters.Find(p=>p.ParameterGuid == explicitRule.ReferenceParameterGuid).Name)</td>
+                                    }
+                                    else if (explicitRule.ReferenceValueGuid.HasValue)
+                                    {
+                                        <td class="font-weight-bold">
+                                            @(model.Parameters.Find(p=>p.ParameterGuid == explicitRule.ParameterGuid)
+                                            .Categories.Find(c=>c.CategoryGuid == explicitRule.ReferenceValueGuid).Value)
+                                        </td>
+                                    }
+                                    else
+                                    {
+                                        <td class="font-weight-bold">@explicitRule.ReferenceValueFloat</td>
+                                    }
+                                </tr>
+                                <tr>
+                                    <td>Then</td>
+                                    @if (model.OutputParameter.ParameterGuid == explicitRule.ForcedParameterGuid)
+                                    {
+                                        <td class="font-weight-bold">@model.OutputParameter.Name</td>
+                                    }
+                                    else
+                                    {
+                                        <td class="font-weight-bold">@(model.Parameters.Find(p=>p.ParameterGuid == explicitRule.ForcedParameterGuid).Name)</td>
+                                    }
+                                    <td>@explicitRule.ForcedOperatorTypeId</td>
+                                    @if (explicitRule.ForcedReferenceParameterGuid.HasValue)
+                                    {
+                                        <td class="font-weight-bold">@(model.Parameters.Find(p=>p.ParameterGuid == explicitRule.ForcedReferenceParameterGuid).Name)</td>
+                                    }
+                                    else if (explicitRule.ForcedReferenceValueGuid.HasValue)
+                                    {
+                                        @if (model.OutputParameter.ParameterGuid == explicitRule.ForcedParameterGuid)
+                                        {
+                                            <td class="font-weight-bold">
+                                                @(model.OutputParameter.Categories.Find(c=>c.CategoryGuid == explicitRule.ForcedReferenceValueGuid).Value)
+                                            </td>
+                                        }
+                                        else
+                                        {
+                                            <td class="font-weight-bold">
+                                                @(model.Parameters.Find(p=>p.ParameterGuid == explicitRule.ForcedParameterGuid)
+                                                        .Categories.Find(c=>c.CategoryGuid == explicitRule.ForcedReferenceValueGuid).Value)
+                                            </td>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <td class="font-weight-bold">@explicitRule.ForcedReferenceValueFloat</td>
+                                    }
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <hr />
+            }
+            <h4 class="sue-text">Variables:</h4>
+            <div class="form-group">
+                <table class="table table-hover table-bordered">
+                    <thead class="thead">
+                        <tr>
+                            <th>Variable</th>
+                            <th>Type</th>
+                            <th>Weight</th>
+                            <th colspan="3">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var parameter in model.Parameters)
+                        {
+                            <tr>
+                                <td class="font-weight-bold">@parameter.Name</td>
+                                <td>@parameter.ParameterTypeId</td>
+                                <td>@parameter.UserWeight</td>
+                                @if (parameter.IsNumeric)
+                                {
+                                    <td>LowerValue: @parameter.LowerValue</td>
+                                    <td>UpperValue: @parameter.UpperValue</td>
+                                    <td>Increment: @parameter.Increment</td>
+                                }
+                                else
+                                {
+                                    <td colspan="2">No of Categories: @parameter.Categories.Count</td>
+                                    <td>@(parameter.IsOrdinal?"Ordinal":"Not Ordinal")</td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </Body>
+    <Footer>
+        <button type="button" class="btn btn-primary sue" @onclick="ExportLog">Export to CSV</button>
+        <button type="button" class="btn btn-danger sue" @onclick="Close">Close</button>
+    </Footer>
+</Modal>
+<Modal @ref="unsavedChangesModal" Dismissable="false">
+    <Title>Confirm</Title>
+    <Body>
+        You have not saved your changes. Continue without saving?
+    </Body>
+    <Footer>
+        <button type="button" class="btn btn-primary sue"@onclick="()=> { unsavedChangesModal.Close(); }">Yes</button>
+        <button type="button" class="btn btn-danger sue" @onclick="()=> { logModal.Open();unsavedChangesModal.Close(); }">No</button>
+    </Footer>
+</Modal>
+<Modal @ref="eraseUserWeightModal" Dismissable="false">
+    <Title>
+        Confirm
+    </Title>
+    <Body>
+        You have changed the correlation levers manually. Would you like to recalculate or continue to use yours?
+    </Body>
+    <Footer>
+        <button type="button" class="btn btn-primary sue" @onclick="()=>SaveAndTrainModel(true)">Recalculate</button>
+        <button type="button" class="btn btn-primary sue" @onclick="()=>SaveAndTrainModel(false)">Continue</button>
+        <button type="button" class="btn btn-danger sue" @onclick="()=> { logModal.Open();eraseUserWeightModal.Close(); }">Cancel</button>
+    </Footer>
+</Modal>
+@code {
+    [Parameter]
+    public PredictedQuery prediction { get; set; }
+    [Parameter]
+    public bool Editable { get; set; } = false;
+    [Parameter]
+    public EventCallback ReQuery { get; set; }
+    bool Editing = false;
+    Sample newSample;
+    bool newSampleSaved;
+    List<Sample> changeSamples;
+    Dictionary<int, bool> changeSamplesSaved;
+    Modal logModal;
+    Modal unsavedChangesModal;
+    Modal eraseUserWeightModal;
+    bool showAnswer = false;
+    public void Open()
+    {
+        Editing = false;
+        showAnswer = true;
+        logModal.Open();
+    }
+    void Close()
+    {
+        if (Editing) {
+            var unsavedChanges = false;
+            var commitChanged = false;
+            //check for unsaved samples
+            if (newSample.OutputValue.Value != prediction.OutputValue.SueValue)
+            {
+                if (newSampleSaved)
+                {
+                    commitChanged = true;
+                }
+                else
+                {
+                    unsavedChanges = true;
+                }
+            }
+            foreach (var neighbor in prediction.Neighbors)
+            {
+                var changeSample = changeSamples.Find(s => s.SampleId == neighbor.SampleId);
+                if (neighbor.OutputValue.Value != changeSample.OutputValue.Value)
+                {
+                    if (changeSamplesSaved[neighbor.SampleId])
+                    {
+                        commitChanged = true;
+                    }
+                    else
+                    {
+                        unsavedChanges = true;
+                    }
+                }
+            }
+            if (unsavedChanges)
+            {
+                logModal.Close();
+                unsavedChangesModal.Open();
+            }
+            else if (commitChanged)
+            {
+                if (model.Parameters.Any(p => p.UserWeight != p.CalculatedWeight))
+                {
+                    logModal.Close();
+                    eraseUserWeightModal.Open();
+                }
+                else
+                {
+                    SaveAndTrainModel(true);
+                }
+            }
+            else
+            {
+                showAnswer = false;
+                logModal.Close();
+            }
+        }
+        else
+        {
+            showAnswer = false;
+            logModal.Close();
+        }
+    }
+    async Task SaveAndTrainModel(bool eraseUserWeights)
+    {
+        var outputChanged = false;
+        if (newSample.OutputValue.Value != prediction.OutputValue.SueValue)
+        {
+            await SueApiService.PostSample(HttpClient, newSample);
+            outputChanged = true;
+        }
+        var changeSampleOutput = false;
+        LogAndCalibrateViewModel dto = new LogAndCalibrateViewModel()
+        {
+            Model = model,
+            Samples = new List<Sample>(),
+        };
+        foreach (var neighbor in prediction.Neighbors)
+        {
+            var changeSample = changeSamples.Find(s => s.SampleId == neighbor.SampleId);
+            if (neighbor.OutputValue.Value != changeSample.OutputValue.Value)
+            {
+                dto.Samples.Add(changeSample);
+                changeSampleOutput = true;
+            }
+        }
+        if (changeSampleOutput)
+        {
+            await SueApiService.PostChangeSampleOutputTemp(HttpClient, dto);
+        }
+        if(outputChanged || changeSampleOutput)
+        {
+            ToastService.ShowSuccess("Changes Saved");
+        }
+        var opresult = await SueApiService.PostSaveCalibration(HttpClient, dto, eraseUserWeights);
+        if (!opresult.IsError)
+        {
+            ModelHandlerService.CurrentModel = await SueApiService.GetModel(HttpClient, model.ModelGuid);
+            showAnswer = false;
+            logModal.Close();
+            ReQuery.InvokeAsync();
+        }
+        else
+        {
+            NavigationManager.NavigateTo("Train");
+        }
+
+    }
+    void ChangeResult()
+    {
+        newSample = new Sample()
+        {
+            OutputValue = new SampleValue() {
+                Value = prediction.OutputValue.SueValue,
+                ParameterGuid = model.OutputParameter.ParameterGuid
+            },
+            SampleValues = prediction.SampleValues,
+            ModelGuid = model.ModelGuid,
+            Version = model.Version
+        };
+        newSampleSaved = false;
+        changeSamples = new List<Sample>();
+        changeSamplesSaved = new Dictionary<int, bool>();
+        foreach (var neighbor in prediction.Neighbors)
+        {
+            changeSamples.Add(new Sample()
+            {
+                OutputValue = new SampleValue() {
+                    Value = neighbor.OutputValue.Value,
+                    ParameterGuid = model.OutputParameter.ParameterGuid
+                },
+                SampleId = neighbor.SampleId,
+                SampleValues = neighbor.SampleValues,
+                ModelGuid = model.ModelGuid,
+                Version = model.Version
+            });
+            changeSamplesSaved.Add(neighbor.SampleId, false);
+        }
+        Editing = true;
+    }
+    Model model => ModelHandlerService.CurrentModel;
+    Rule InvalidatingRule
+    {
+        get
+        {
+            return prediction.InvalidatingRuleGuid.HasValue ?
+                model.Rules.Find(r => r.RuleGuid == prediction.InvalidatingRuleGuid) : null;
+        }
+    }
+    Rule ForcingRule
+    {
+        get
+        {
+            return prediction.ForcingRuleGuid.HasValue ?
+                model.Rules.Find(r => r.RuleGuid == prediction.ForcingRuleGuid) : null;
+        }
+    }
+    bool ValidateNumber(Parameter parameter, SampleValue sampleValue)
+    {
+        bool result = double.TryParse(sampleValue.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double newValue);
+        if (result)
+        {
+            if (newValue > parameter.UpperValue)
+            {
+                ToastService.ShowWarning($"{sampleValue.Value} is out of range");
+                sampleValue.Value = parameter.UpperValue.ToString();
+                return false;
+            }
+            else if (newValue < parameter.LowerValue)
+            {
+                ToastService.ShowWarning($"{sampleValue.Value} is out of range");
+                sampleValue.Value = parameter.LowerValue.ToString();
+                return false;
+            }
+            else
+            {
+                var raw = parameter.TranslateValue(sampleValue.Value);
+                var displayValue = parameter.TranslateRawToDisplayValue(raw.Value);
+                if (displayValue != sampleValue.Value)
+                {
+                    ToastService.ShowWarning($"{sampleValue.Value} is out of range");
+                    sampleValue.Value = displayValue;
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            sampleValue.Value = parameter.LowerValue.ToString();
+            return false;
+        }
+        return true;
+    }
+    async Task ExportLog()
+    {
+        System.Text.StringBuilder csvContent = new System.Text.StringBuilder();
+        csvContent.Append("Variables \n");
+        csvContent.Append("Variable,Type,UserWeight,Details \n");
+        foreach (var parameter in model.Parameters)
+        {
+            csvContent.Append($"{parameter.Name},{parameter.ParameterTypeId},{parameter.UserWeight},");
+            if (parameter.IsNumeric)
+            {
+                csvContent.Append($"Lower Value: {parameter.LowerValue} | Upper Value: {parameter.UpperValue} | Increment: {parameter.Increment}");
+            }
+            else
+            {
+                csvContent.Append($"No. of Categories: {parameter.Categories.Count} | ");
+                if(parameter.IsOrdinal)
+                    csvContent.Append("Ordinal");
+                else
+                    csvContent.Append("Not Ordinal");
+            }
+            csvContent.Append("\n");
+        }
+        csvContent.Append($"{model.OutputParameter.Name},{model.OutputParameter.ParameterTypeId},(OUTCOME)");
+        csvContent.Append(" \n\n");
+        csvContent.Append("Query & Result \n");
+        foreach(var parameter in model.Parameters)
+        {
+            csvContent.Append($"{parameter.Name},");
+        }
+        csvContent.Append($"{model.OutputParameter.Name} \n");
+        foreach(var sampleValue in prediction.SampleValues)
+        {
+            var parameter = model.Parameters.Find(p => p.ParameterGuid == sampleValue.ParameterGuid);
+            if(parameter.IsNumeric)
+                csvContent.Append($"{sampleValue.Value},");
+            else {
+                csvContent.Append($"{parameter.Categories.Find(c=>c.CategoryGuid==Guid.Parse(sampleValue.Value)).Value},");
+            }
+        }
+        if (model.OutputParameter.IsNumeric)
+            csvContent.Append($"{prediction.OutputValue.SueValue} \n\n");
+        else
+        {
+            if(InvalidatingRule is not null)
+                csvContent.Append($"{prediction.OutputValue.SueValue} \n\n");
+            else
+                csvContent.Append($"{model.OutputParameter.Categories.Find(c => c.CategoryGuid == Guid.Parse(prediction.OutputValue.SueValue)).Value} \n\n");
+        }
+        csvContent.Append($"Relationship \n");
+        if(InvalidatingRule is not null && InvalidatingRule is not ExplicitRule)
+        {
+            csvContent.Append($"{InvalidatingRule.Name}\n");
+        }
+        else
+        {
+            csvContent.Append("No relationships used \n");
+        }
+        csvContent.Append("\n");
+        csvContent.Append($"Explicit Rule \n");
+        if (ForcingRule is not null || (InvalidatingRule is not null && InvalidatingRule is ExplicitRule))
+        {
+            if(ForcingRule is not null)
+                csvContent.Append($"{ForcingRule.Name}\n");
+            else
+                csvContent.Append($"{InvalidatingRule.Name}\n");
+        }
+        else
+        {
+            csvContent.Append("No explicit rules used \n");
+        }
+        csvContent.Append("\n");
+        csvContent.Append($"Voting Mode: {prediction.VotingMode}");
+        csvContent.Append("\n\n");
+        csvContent.Append($"Neighbors/Points Used \n");
+        if(prediction.Neighbors.Count > 0)
+        {
+            csvContent.Append("SampleId,");
+            foreach(var parameter in model.Parameters)
+            {
+                csvContent.Append($"{parameter.Name},");
+            }
+            csvContent.Append($"{model.OutputParameter.Name}, Proximity \n");
+            foreach(var neighbor in prediction.Neighbors)
+            {
+                csvContent.Append($"{neighbor.SampleId},");
+                foreach (var sampleValue in neighbor.SampleValues)
+                {
+                    var parameter = model.Parameters.Find(p => p.ParameterGuid == sampleValue.ParameterGuid);
+                    if (parameter.IsNumeric)
+                        csvContent.Append($"{sampleValue.Value},");
+                    else
+                    {
+                        csvContent.Append($"{parameter.Categories.Find(c => c.CategoryGuid == Guid.Parse(sampleValue.Value)).Value},");
+                    }
+                }
+                if(model.OutputParameter.IsNumeric)
+                    csvContent.Append($"{neighbor.OutputValue.Value}, {Math.Round(neighbor.Score,2)}\n");
+                else
+                    csvContent.Append($"{model.OutputParameter.Categories.Find(c=>c.CategoryGuid==Guid.Parse(neighbor.OutputValue.Value)).Value}, {Math.Round(neighbor.Score, 2)}\n");
+            }
+        }
+        else
+        {
+            csvContent.Append("No samples used \n");
+        }
+        var name = model.Name + " - Log.csv";
+        await JSRuntime.InvokeVoidAsync("downloadCSV", name, csvContent.ToString());
+    }
+}

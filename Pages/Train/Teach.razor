@@ -1,0 +1,174 @@
+﻿@page "/Train/Teach"
+@layout MainLayout
+@inject HttpClient HttpClient
+@inject NavigationManager NavigationManager
+@inject SueApiService SueApiService
+@inject ModelHandlerService ModelHandlerService
+@inject IToastService ToastService
+@using SUM.Model.Components.Descriptive
+
+<!-- This is the submenu for training the model with samples-->
+
+@if (loading)
+{
+    <div class="modal d-inline" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content border-0">
+                <div class="modal-body">
+                    <div class="d-flex justify-content-center">
+                        <div class="spinner-border" role="status">
+                            <span class="sr-only">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="row justify-content-center overflow-auto @sueCarouselClass" style="margin-left:3vw;margin-right:3vw;margin-top:10vh;padding:1rem;margin-bottom:2rem;">
+        <div class="col">
+            <div class="justify-content-around">
+                <div class="font-weight-bold">
+                    @model.OutputParameter.Name
+                </div>
+                <div>
+                    Iteration: @(SampleCount+1)
+                </div>
+            </div>
+            <div class="justify-content-center">
+                <section class="mt-2" id="no-more-tables">
+                    <table class="table table-hover table-bordered">
+                        <thead class="thead">
+                            <tr>
+                                <th style="width:20%">Name</th>
+                                <th style="width:80%" colspan="2">Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- A wrapper for a table which displays the sample, and allows you to change every sampleValue -->
+                            <SueTableBody model="model" sample="trainingSample" maxTotalCatNameLength="maxTotalCatNameLength" />
+                        </tbody>
+                    </table>
+                </section>
+                <div class="row form-group">
+                    @if (model.OutputParameter.IsNumeric)
+                    {
+                        <div class="col">
+                            <input class="form-control" type="number" @bind-value="trainingSample.OutputValue.Value" @bind-value:event="oninput"
+                                   min="@model.OutputParameter.LowerValue" max="@model.OutputParameter.UpperValue" step="@model.OutputParameter.Increment" />
+                        </div>
+                        <div class="col">
+                            <input class="custom-range align-items-end" type="range" @bind-value="trainingSample.OutputValue.Value" @bind-value:event="oninput"
+                                   min="@model.OutputParameter.LowerValue" max="@model.OutputParameter.UpperValue" step="@model.OutputParameter.Increment" />
+                        </div>
+                        <div class="col">
+                            <button type="button" class="btn btn-primary sue" @onclick="PostSample">Next Sample</button>
+                        </div>
+                    }
+                    else
+                    {
+                        @*var catsNameLength = 0;
+                        @foreach (var cat in model.OutputParameter.Categories)
+                        {
+                            catsNameLength += cat.Value.Length;
+                        }
+                        @if (catsNameLength < maxTotalCatNameLength)
+                        {*@
+                            <div class="btn-group">
+                                @foreach (var cat in model.OutputParameter.Categories)
+                                {
+                                    <button type="button" class="btn btn-primary sue"
+                                            @onclick="async () => { trainingSample.OutputValue.Value = cat.CategoryGuid.ToString(); await PostSample(); }">
+                                        @cat.Value
+                                    </button>
+                                }
+                            </div>
+                        @*}
+                        else
+                        {
+                            <div class="col">
+                                <select class="custom-select" @bind="trainingSample.OutputValue.Value">
+                                    @foreach (var cat in model.OutputParameter.Categories)
+                                    {
+                                        <option value="@cat.CategoryGuid.ToString()">
+                                            @cat.Value
+                                        </option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col">
+                                <button type="button" class="btn btn-primary sue" @onclick="PostSample">Next Sample</button>
+                            </div>
+                        }*@
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+@code{
+    protected override async Task OnInitializedAsync()
+    {
+        loading = true;
+        if (SueApiService.LoggedIn)
+        {
+            if (ModelHandlerService.CurrentModel is not null)
+            {
+                ModelHandlerService.CurrentPane = ModelHandlerService.Panes.Train;
+                ModelHandlerService.CurrentModel = await SueApiService.GetModel(HttpClient, ModelHandlerService.CurrentModel.ModelGuid);
+                await GetNextSample();
+                loading = false;
+            }
+            else
+            {
+                NavigationManager.NavigateTo("Models");
+            }
+        }
+        else
+        {
+            NavigationManager.NavigateTo("");
+        }
+    }
+    async Task GetNextSample()
+    {
+        var trainingSampleResult = await SueApiService.GetTrainingSample(HttpClient, model.ModelGuid);
+        if (trainingSampleResult.IsError)
+        {
+            ToastService.ShowWarning(trainingSampleResult.Error);
+        }
+        trainingSample = trainingSampleResult.Samples.First();
+        if (model.OutputParameter.IsCategorical)
+            trainingSample.OutputValue.Value = Guid.Empty.ToString();
+        SampleCount = trainingSampleResult.SavedSampleCount;
+        StateHasChanged();
+    }
+    async Task PostSample()
+    {
+        sueCarouselClass = "";
+        if (model.ModelStatusId != Model.VariablesDefinedModelStatusId)
+        {
+            model.ModelStatusId = Model.VariablesDefinedModelStatusId;
+            await SueApiService.PostCreateOrUpdateModel(HttpClient, model);
+        }
+        var opresult = await SueApiService.PostSample(HttpClient, trainingSample);
+        sueCarouselClass = "sueCarousel";
+        if (!opresult.IsError)
+        {
+            ToastService.ShowSuccess("Sample Saved");
+            await GetNextSample();
+        }
+        else
+        {
+            ToastService.ShowError(opresult.Error);
+        }
+    }
+    SUM.Model.Components.Descriptive.Model model => ModelHandlerService.CurrentModel;
+    SUM.Model.Components.Physical.Sample trainingSample;
+    int SampleCount;
+    bool loading;
+    int maxTotalCatNameLength = 50;
+
+    string sueCarouselClass;
+}

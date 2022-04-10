@@ -1,0 +1,66 @@
+﻿@using SUM.Model.Components.Descriptive
+@using SUM.Model.Components.Physical
+@if (CategoriesOverflowing)
+{
+    @if (showOverFlow)
+    {
+        <div class="btn-group popup" @onmouseleave="() => { showOverFlow = false; }">
+            @foreach (var cat in Parameter.Categories)//If the OnMouseLeave ever breaks, look into how blazor could have changed the eventhandler, since we had to create our own (Eventhandler.cs)
+            {
+                <button type="button" class="btn btn-primary sue @(SampleValue.Value==cat.CategoryGuid.ToString()?"active":string.Empty)"
+                        @onclick="()=> { SampleValue.Value = cat.CategoryGuid.ToString(); showOverFlow = false; SelectedCategoryChanged.InvokeAsync(); }">
+                    @cat.Value
+                </button>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="filterheader form-control overflow-hidden text-nowrap" @onclick="()=>{ showOverFlow = true; }">
+            <label>@SelectedCategoryValue</label>
+        </div>
+    }
+}
+else
+{
+    <div class="btn-group">
+        @foreach (var cat in Parameter.Categories)
+        {
+            <button type="button" class="btn btn-primary sue @(SampleValue.Value==cat.CategoryGuid.ToString()?"active":string.Empty)"
+                    @onclick="()=> { SampleValue.Value = cat.CategoryGuid.ToString(); SelectedCategoryChanged.InvokeAsync(); }">
+                @cat.Value
+            </button>
+        }
+    </div>
+}
+@code {
+    [Parameter]
+    public Parameter Parameter { get; set; }
+    [Parameter]
+    public SampleValue SampleValue { get; set; }
+    //[Parameter]
+    //public Guid SelectedCategoryGuid { get; set; }
+    [Parameter]
+    public EventCallback SelectedCategoryChanged { get; set; }
+    [Parameter]
+    public int MaxCategoriesLength { get; set; }
+
+    bool CategoriesOverflowing
+    {
+        get
+        {
+            return Parameter.Categories.Sum(c => c.Value.Length) > MaxCategoriesLength;
+        }
+    }
+    string SelectedCategoryValue
+    {
+        get
+        {
+            if (Parameter.Categories.Any(c => c.CategoryGuid.ToString() == SampleValue.Value))
+                return Parameter.Categories.Find(c => c.CategoryGuid.ToString() == SampleValue.Value).Value;
+            else
+                return string.Empty;
+        }
+    }
+    bool showOverFlow = false;
+}

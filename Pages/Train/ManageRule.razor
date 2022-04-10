@@ -1,0 +1,630 @@
+﻿@using SUM.Model.Components.Descriptive
+@inject HttpClient HttpClient
+@inject NavigationManager NavigationManager
+@inject SueApiService SueApiService
+@inject ModelHandlerService ModelHandlerService
+@inject IToastService ToastService
+
+<!-- This is a wrapper for editing/creating rules: does validation to make sure that the rule is valid, and that the correct things are displayed based on if it is relationship/explicit-->
+
+<div class="font-weight-bold">
+    @(IsExplicit?"Explicit Rule":"Relationship")
+</div>
+<EditForm Model="Rule">
+    <section class="mt-2" id="no-more-tables">
+        <table class="table table-hover table-bordered text-center">
+            <tbody>
+                <tr>
+
+                    @if (IsExplicit)
+                    {
+                        <td style="width:25%">
+                            If
+                        </td>
+
+                    }
+                    <td style="@(IsExplicit?"width:25%":"width:33%")" class="filterheader" @onclick="@parameterModal.Open">
+                        <label>@ParameterName</label>
+                    </td>
+                    <td style="@(IsExplicit?"width:25%":"width:33%")" class="filterheader" @onclick="@operatorModal.Open">
+                        <label>@Rule.OperatorType</label>
+                    </td>
+                    <td style="@(IsExplicit?"width:25%":"width:33%")" class="filterheader" @onclick="@referenceModal.Open">
+                        <label>@referenceValue</label>
+                    </td>
+                </tr>
+                @if (IsExplicit)
+                {
+                <tr>
+                    <td style="width:25%">Then</td>
+                    <td style="width:25%" class="filterheader" @onclick="@forcedParameterModal.Open">
+                        <label>@ForcedParameterName</label>
+                    </td>
+                    <td style="width:25%" class="filterheader" @onclick="@forcedOperatorModal.Open">
+                        <label>@ExplicitRule.ForcedOperatorType</label>
+                    </td>
+                    <td style="width:25%" class="filterheader" @onclick="@forcedReferenceModal.Open">
+                        <label>@forcedReferenceValue</label>
+                    </td>
+                </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+    <button type="button" class="btn btn-primary sue" @onclick="SaveRule">Save</button>
+    <button type="button" class="btn btn-danger sue" @onclick="CancelRule">Cancel</button>
+</EditForm>
+<Modal @ref="parameterModal">
+    <Title>
+    </Title>
+    <Body>
+        @{
+            IEnumerable<Parameter> Parameters;
+            if (IsExplicit)
+            {
+                Parameters = Model.Parameters;
+            }
+            else
+            {
+                Parameters = Model.Parameters.Where(p => p.IsNumeric);
+            }
+            foreach (var parameter in Parameters)
+            {
+                if (!IsExplicit || ExplicitRule.ForcedParameterGuid != parameter.ParameterGuid) { 
+                <div class="form-check">
+                    <input type="radio" id="@($"ruleParameter{parameter.ParameterGuid}")" class="custom-control-inline" value="true"
+                           name="@($"ruleParameterGuid")"
+                           checked="@(ParameterGuid == parameter.ParameterGuid)"
+                           @onchange="@(async () => { ParameterGuid = parameter.ParameterGuid; parameterModal.Close(); await Task.Delay(300); operatorModal.Open(); })" />
+                    <label for="@($"ruleParameter{parameter.ParameterGuid}")">@parameter.Name</label><br>
+                </div>
+                }
+            }
+        }
+    </Body>
+    <Footer>
+        <button type="button" class="btn btn-primary sue" @onclick="parameterModal.Close">Close</button>
+    </Footer>
+</Modal>
+<Modal @ref="operatorModal">
+    <Title>
+    </Title>
+    <Body>
+        @{
+            Parameter parameter = Model.Parameters.Find(p => p.ParameterGuid == Rule.ParameterGuid);
+            if (parameter is not null)
+            {
+                <div class="form-check">
+                    <input type="radio" id="ruleOperatorEqual" class="custom-control-inline" value="true"
+                           name="ruleOperator"
+                           checked="@(Rule.OperatorTypeId == Rule.OperatorTypeIdEqual)"
+                           @onchange="@(() => { Rule.OperatorTypeId = Rule.OperatorTypeIdEqual; operatorModal.Close(); referenceModal.Open(); })" />
+                    <label for="ruleOperatorEqual">(@Rule.OperatorTypeIdEqual) @Rule.OperatorTypeEqual</label><br>
+                </div>
+                <div class="form-check">
+                    <input type="radio" id="ruleOperatorNotEqual" class="custom-control-inline" value="true"
+                           name="ruleOperator"
+                           checked="@(Rule.OperatorTypeId == Rule.OperatorTypeIdNotEqual)"
+                           @onchange="@(() => { Rule.OperatorTypeId = Rule.OperatorTypeIdNotEqual; operatorModal.Close(); referenceModal.Open(); })" />
+                    <label for="ruleOperatorNotEqual">(@Rule.OperatorTypeIdNotEqual) @Rule.OperatorTypeNotEqual</label><br>
+                </div>
+                if (parameter.IsNumeric || parameter.IsOrdinal)
+                {
+                    <div class="form-check">
+                        <input type="radio" id="ruleOperatorLess" class="custom-control-inline" value="true"
+                               name="ruleOperator"
+                               checked="@(Rule.OperatorTypeId == Rule.OperatorTypeIdLess)"
+                               @onchange="@(() => { Rule.OperatorTypeId = Rule.OperatorTypeIdLess; operatorModal.Close(); referenceModal.Open(); })" />
+                        <label for="ruleOperatorLess">(@Rule.OperatorTypeIdLess) @Rule.OperatorTypeLess</label><br>
+                    </div>
+                    <div class="form-check">
+                    <input type="radio" id="ruleOperatorLessEqual" class="custom-control-inline" value="true"
+                           name="ruleOperator"
+                           checked="@(Rule.OperatorTypeId == Rule.OperatorTypeIdLessThanOrEqual)"
+                           @onchange="@(() => { Rule.OperatorTypeId = Rule.OperatorTypeIdLessThanOrEqual; operatorModal.Close(); referenceModal.Open(); })" />
+                    <label for="ruleOperatorLessEqual">(@Rule.OperatorTypeIdLessThanOrEqual) @Rule.OperatorTypeLessThanOrEqual</label><br>
+                    </div>
+                    <div class="form-check">
+                        <input type="radio" id="ruleOperatorGreater" class="custom-control-inline" value="true"
+                               name="ruleOperator"
+                               checked="@(Rule.OperatorTypeId == Rule.OperatorTypeIdGreater)"
+                               @onchange="@(() => { Rule.OperatorTypeId = Rule.OperatorTypeIdGreater; operatorModal.Close(); referenceModal.Open(); })" />
+                        <label for="ruleOperatorGreater">(@Rule.OperatorTypeIdGreater) @Rule.OperatorTypeGreater</label><br>
+                    </div>
+                    <div class="form-check">
+                        <input type="radio" id="ruleOperatorGreaterEqual" class="custom-control-inline" value="true"
+                               name="ruleOperator"
+                               checked="@(Rule.OperatorTypeId == Rule.OperatorTypeIdGreaterThanOrEqual)"
+                               @onchange="@(() => { Rule.OperatorTypeId = Rule.OperatorTypeIdGreaterThanOrEqual; operatorModal.Close(); referenceModal.Open(); })" />
+                        <label for="ruleOperatorGreaterEqual">(@Rule.OperatorTypeIdGreaterThanOrEqual) @Rule.OperatorTypeGreaterThanOrEqual</label><br>
+                    </div>
+                }
+            }
+        }
+    </Body>
+    <Footer>
+        <button type="button" class="btn btn-primary sue" @onclick="operatorModal.Close">Close</button>
+    </Footer>
+</Modal>
+<Modal @ref="referenceModal">
+    <Title>
+    </Title>
+    <Body>
+        @{
+            var comparedParameter = Model.Parameters.Find(p => p.ParameterGuid == Rule.ParameterGuid);
+            var otherParams = comparedParameter is not null ? Model.Parameters.Where(p => p.ParameterGuid != comparedParameter.ParameterGuid
+                                                                   && p.ParameterTypeId == comparedParameter.ParameterTypeId
+                                                                   && p.IsOrdinal == comparedParameter.IsOrdinal) : null;
+            if (comparedParameter is not null)
+            {
+                if (otherParams.Count() > 0)
+                {
+                    <div class="form-group">
+                        <label>Variables:</label>
+                        <select class="custom-select" @bind="referenceParameterGuid">
+                            <option value="@Guid.Empty"></option>
+                            @foreach (var parameter in otherParams)
+                            {
+                                <option value="@parameter.ParameterGuid">
+                                    @parameter.Name
+                                </option>
+                            }
+                        </select>
+                    </div>
+                }
+                <div class="form-group">
+                    <label>Other:</label>
+                    @if (comparedParameter.IsNumeric)
+                    {
+                        <input class="form-control" type="number" @bind="Rule.ReferenceValueFloat" min="@comparedParameter.LowerValue" max="@comparedParameter.UpperValue" step="@comparedParameter.Increment" />
+                    }
+                    else
+                    {
+                        <select class="custom-select" @bind="referenceValueGuid">
+                            <option value="@Guid.Empty"></option>
+                            @foreach (var cat in comparedParameter.Categories)
+                            {
+                                <option value="@cat.CategoryGuid">
+                                    @cat.Value
+                                </option>
+                            }
+                        </select>
+                    }
+                </div>
+            }
+        }
+    </Body>
+    <Footer>
+        <button type="button" class="btn btn-primary sue" @onclick="referenceModal.Close">Close</button>
+    </Footer>
+</Modal>
+@if (IsExplicit)
+{
+    <Modal @ref="forcedParameterModal">
+        <Title>
+        </Title>
+        <Body>
+            @{
+                IEnumerable<Parameter> Parameters = Model.Parameters.Concat(new List<Parameter>() { Model.OutputParameter});
+                foreach (var parameter in Parameters)
+                {
+                    if(parameter.ParameterGuid != Rule.ParameterGuid) { 
+                    <div class="form-check">
+                        <input type="radio" id="@($"ruleForcedParameter{parameter.ParameterGuid}")" class="custom-control-inline" value="true"
+                               name="@($"ruleForcedParameterGuid")"
+                               checked="@(ForcedParameterGuid == parameter.ParameterGuid)"
+                               @onchange="@(() => { ForcedParameterGuid = parameter.ParameterGuid; forcedParameterModal.Close(); forcedOperatorModal.Open(); })" />
+                        <label for="@($"ruleForcedParameter{parameter.ParameterGuid}")">@parameter.Name</label><br>
+                    </div>
+                    }
+                }
+            }
+        </Body>
+        <Footer>
+            <button type="button" class="btn btn-primary sue" @onclick="forcedParameterModal.Close">Close</button>
+        </Footer>
+    </Modal>
+    <Modal @ref="forcedOperatorModal">
+        <Title>
+        </Title>
+        <Body>
+            @{
+                Parameter parameter = null;
+                if (Model.OutputParameter.ParameterGuid == ExplicitRule.ForcedParameterGuid)
+                    parameter = Model.OutputParameter;
+                else if (Model.Parameters.Any(p => p.ParameterGuid == ExplicitRule.ForcedParameterGuid))
+                    parameter = Model.Parameters.Find(p => p.ParameterGuid == ExplicitRule.ForcedParameterGuid);
+                if (parameter is not null)
+                {
+                    <div class="form-check">
+                        <input type="radio" id="ruleForcedOperatorEqual" class="custom-control-inline" value="true"
+                               name="ruleForcedOperator"
+                               checked="@(ExplicitRule.ForcedOperatorTypeId == Rule.OperatorTypeIdEqual)"
+                               @onchange="@(() => { ExplicitRule.ForcedOperatorTypeId = Rule.OperatorTypeIdEqual; forcedOperatorModal.Close(); forcedReferenceModal.Open(); })" />
+                        <label for="ruleForcedOperatorEqual">(@Rule.OperatorTypeIdEqual) @Rule.OperatorTypeEqual</label><br>
+                    </div>
+                    <div class="form-check">
+                        <input type="radio" id="rruleForcedOperatorNotEqual" class="custom-control-inline" value="true"
+                               name="ruleForcedOperator"
+                               checked="@(ExplicitRule.ForcedOperatorTypeId == Rule.OperatorTypeIdNotEqual)"
+                               @onchange="@(() => { ExplicitRule.ForcedOperatorTypeId = Rule.OperatorTypeIdNotEqual; forcedOperatorModal.Close(); forcedReferenceModal.Open();})" />
+                        <label for="ruleForcedOperatorNotEqual">(@Rule.OperatorTypeIdNotEqual) @Rule.OperatorTypeNotEqual</label><br>
+                    </div>
+                    if (parameter.IsNumeric || parameter.IsOrdinal)
+                    {
+                        <div class="form-check">
+                            <input type="radio" id="ruleForcedOperatorLess" class="custom-control-inline" value="true"
+                                   name="ruleForcedOperator"
+                                   checked="@(ExplicitRule.ForcedOperatorTypeId == Rule.OperatorTypeIdLess)"
+                                   @onchange="@(() => { ExplicitRule.ForcedOperatorTypeId = Rule.OperatorTypeIdLess; forcedOperatorModal.Close(); forcedReferenceModal.Open();})" />
+                            <label for="ruleForcedOperatorLess">(@Rule.OperatorTypeIdLess) @Rule.OperatorTypeLess</label><br>
+                        </div>
+                        <div class="form-check">
+                        <input type="radio" id="ruleForcedOperatorLessEqual" class="custom-control-inline" value="true"
+                               name="ruleForcedOperator"
+                               checked="@(ExplicitRule.ForcedOperatorTypeId == Rule.OperatorTypeIdLessThanOrEqual)"
+                               @onchange="@(() => { ExplicitRule.ForcedOperatorTypeId = Rule.OperatorTypeIdLessThanOrEqual; forcedOperatorModal.Close(); forcedReferenceModal.Open();})" />
+                        <label for="ruleForcedOperatorLessEqual">(@Rule.OperatorTypeIdLessThanOrEqual) @Rule.OperatorTypeLessThanOrEqual</label><br>
+                        </div>
+                        <div class="form-check">
+                            <input type="radio" id="ruleForcedOperatorGreater" class="custom-control-inline" value="true"
+                                   name="ruleForcedOperator"
+                                   checked="@(ExplicitRule.ForcedOperatorTypeId == Rule.OperatorTypeIdGreater)"
+                                   @onchange="@(() => { ExplicitRule.ForcedOperatorTypeId = Rule.OperatorTypeIdGreater; forcedOperatorModal.Close(); forcedReferenceModal.Open();})" />
+                            <label for="ruleForcedOperatorGreater">(@Rule.OperatorTypeIdGreater) @Rule.OperatorTypeGreater</label><br>
+                        </div>
+                        <div class="form-check">
+                            <input type="radio" id="ruleForcedOperatorGreaterEqual" class="custom-control-inline" value="true"
+                                   name="ruleForcedOperator"
+                                   checked="@(ExplicitRule.ForcedOperatorTypeId == Rule.OperatorTypeIdGreaterThanOrEqual)"
+                                   @onchange="@(() => { ExplicitRule.ForcedOperatorTypeId = Rule.OperatorTypeIdGreaterThanOrEqual; forcedOperatorModal.Close(); forcedReferenceModal.Open();})" />
+                            <label for="ruleForcedOperatorGreaterEqual">(@Rule.OperatorTypeIdGreaterThanOrEqual) @Rule.OperatorTypeGreaterThanOrEqual</label><br>
+                        </div>
+                    }
+                }
+            }
+        </Body>
+        <Footer>
+            <button type="button" class="btn btn-primary sue" @onclick="forcedOperatorModal.Close">Close</button>
+        </Footer>
+    </Modal>
+    <Modal @ref="forcedReferenceModal">
+        <Title>
+        </Title>
+        <Body>
+            @{
+                var parameters = Model.Parameters.ToList();
+                parameters.Add(Model.OutputParameter);
+                var comparedParameter = parameters.Find(p => p.ParameterGuid == ExplicitRule.ForcedParameterGuid);
+                var otherParams = comparedParameter is not null ? Model.Parameters.Where(p => p.ParameterGuid != comparedParameter.ParameterGuid
+                                                                       && p.ParameterTypeId == comparedParameter.ParameterTypeId
+                                                                       && p.IsOrdinal == comparedParameter.IsOrdinal) : null;
+                if (comparedParameter is not null)
+                {
+                    if (otherParams.Count() > 0)
+                    {
+                        <div class="form-group">
+                            <label>Variables:</label>
+                            <select class="custom-select" @bind="forcedReferenceParameterGuid">
+                                <option value="@Guid.Empty"></option>
+                                @foreach (var parameter in otherParams)
+                                {
+                                    <option value="@parameter.ParameterGuid">
+                                        @parameter.Name
+                                    </option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    <div class="form-group">
+                        <label>Other:</label>
+                        @if (comparedParameter.IsNumeric)
+                        {
+                            <input class="form-control" type="number" @bind="ExplicitRule.ForcedReferenceValueFloat" min="@comparedParameter.LowerValue" max="@comparedParameter.UpperValue" step="@comparedParameter.Increment" />
+                        }
+                        else
+                        {
+                            <select class="custom-select" @bind="forcedReferenceValueGuid">
+                                <option value="@Guid.Empty"></option>
+                                @foreach (var cat in comparedParameter.Categories)
+                                {
+                                    <option value="@cat.CategoryGuid">
+                                        @cat.Value
+                                    </option>
+                                }
+                            </select>
+                        }
+                    </div>
+                }
+            }
+        </Body>
+        <Footer>
+            <button type="button" class="btn btn-primary sue" @onclick="forcedReferenceModal.Close">Close</button>
+        </Footer>
+    </Modal>
+}
+@code {
+    protected override void OnParametersSet()
+    {
+        ExplicitRule = Rule as ExplicitRule;
+        base.OnParametersSet();
+    }
+    [Parameter]
+    public Rule Rule { get; set; }
+
+    ExplicitRule ExplicitRule { get; set; }
+
+    [Parameter]
+    public List<Rule> Rules { get; set; }
+    [Parameter]
+    public bool IsExplicit { get; set; }
+    [Parameter]
+    public EventCallback RuleSaved { get; set; }
+    [Parameter]
+    public EventCallback RuleCancelled { get; set; }
+    [Parameter]
+    public Model Model { get; set; }
+
+    async Task SaveRule()
+    {
+        bool commitSave = true;
+        foreach (var rule in Rules)
+        {
+            if (rule.RuleGuid != Rule.RuleGuid)
+            {
+                var ruleExists = CompareRules(rule, Rule);
+                if (ruleExists)
+                {
+                    ToastService.ShowWarning("Rule already exists");
+                    commitSave = false;
+                }
+            }
+            else
+            {
+                commitSave &= !CompareRules(rule, Rule);
+            }
+        }
+        if (commitSave)
+        {
+            SUM.Model.Components.Accessories.OperationResult opresult;
+            if (IsExplicit)
+                opresult = await SueApiService.PostExplicitRule(HttpClient, ExplicitRule);
+            else
+                opresult = await SueApiService.PostRelationship(HttpClient, Rule as RelationshipRule);
+            if (opresult.IsError)
+            {
+                ToastService.ShowError(opresult.Error);
+            }
+            await RuleSaved.InvokeAsync();
+        }
+        else
+        {
+            await CancelRule();
+        }
+    }
+
+    bool CompareRules(Rule a, Rule b)
+    {
+        var aExplicit = a as ExplicitRule;
+        var bExplicit = b as ExplicitRule;
+        if (a.ParameterGuid != b.ParameterGuid)
+            return false;
+        if (a.OperatorTypeId != b.OperatorTypeId)
+            return false;
+        if (a.ReferenceParameterGuid != b.ReferenceParameterGuid)
+            return false;
+        if (a.ReferenceValueFloat != b.ReferenceValueFloat)
+            return false;
+        if (a.ReferenceValueGuid != b.ReferenceValueGuid)
+            return false;
+        if (aExplicit is not null && bExplicit is not null)
+        {
+            if (aExplicit.ForcedParameterGuid != bExplicit.ForcedParameterGuid)
+                return false;
+            if (aExplicit.ForcedOperatorTypeId != bExplicit.ForcedOperatorTypeId)
+                return false;
+            if (aExplicit.ForcedReferenceParameterGuid != bExplicit.ForcedReferenceParameterGuid)
+                return false;
+            if (aExplicit.ForcedReferenceValueFloat != bExplicit.ForcedReferenceValueFloat)
+                return false;
+            if (aExplicit.ForcedReferenceValueGuid != bExplicit.ForcedReferenceValueGuid)
+                return false;
+        }
+        else if (aExplicit is not null || bExplicit is not null)
+            return false;
+        return true;
+    }
+
+    async Task CancelRule()
+    {
+        await RuleCancelled.InvokeAsync();
+    }
+
+    string referenceValue
+    {
+        get
+        {
+            if (Rule.ReferenceParameterGuid.HasValue)
+                return Model.Parameters.Find(p => p.ParameterGuid == Rule.ReferenceParameterGuid.Value).Name;
+            else if (Rule.ReferenceValueGuid.HasValue)
+            {
+                var parameter = Model.Parameters.Find(p => p.ParameterGuid == Rule.ParameterGuid);
+                if (parameter is not null)
+                {
+                    var cat = parameter.Categories.Find(c => c.CategoryGuid == Rule.ReferenceValueGuid.Value);
+                    if (cat is not null)
+                        return cat.Value;
+                }
+            }
+            else if (Rule.ReferenceValueFloat.HasValue)
+                return Rule.ReferenceValueFloat.Value.ToString();
+            return string.Empty;
+        }
+    }
+    string forcedReferenceValue
+    {
+        get
+        {
+            if (ExplicitRule.ForcedReferenceParameterGuid.HasValue)
+            {
+                List<Parameter> list = Model.Parameters.ToList();
+                list.Add(Model.OutputParameter);
+                return list.Find(p => p.ParameterGuid == ExplicitRule.ForcedReferenceParameterGuid.Value).Name;
+            }
+            else if (ExplicitRule.ForcedReferenceValueGuid.HasValue)
+            {
+                List<Parameter> list = Model.Parameters.ToList();
+                list.Add(Model.OutputParameter);
+                var parameter = list.Find(p => p.ParameterGuid == ExplicitRule.ForcedParameterGuid);
+                if (parameter is not null)
+                {
+                    var cat = parameter.Categories.Find(c => c.CategoryGuid == ExplicitRule.ForcedReferenceValueGuid.Value);
+                    if (cat is not null)
+                        return cat.Value;
+                }
+            }
+            else if (ExplicitRule.ForcedReferenceValueFloat.HasValue)
+                return ExplicitRule.ForcedReferenceValueFloat.Value.ToString();
+            return string.Empty;
+        }
+    }
+    Guid? referenceParameterGuid
+    {
+        get { return Rule.ReferenceParameterGuid; }
+        set
+        {
+            if (value == Guid.Empty)
+                Rule.ReferenceParameterGuid = null;
+            else
+            {
+                Rule.ReferenceParameterGuid = value;
+                Rule.ReferenceValueFloat = null;
+                Rule.ReferenceValueGuid = null;
+            }
+        }
+    }
+    Guid? referenceValueGuid
+    {
+        get { return Rule.ReferenceValueGuid; }
+        set
+        {
+            if (value == Guid.Empty)
+                Rule.ReferenceValueGuid = null;
+            else
+            {
+                Rule.ReferenceParameterGuid = null;
+                Rule.ReferenceValueFloat = null;
+                Rule.ReferenceValueGuid = value;
+            }
+        }
+    }
+    Guid? forcedReferenceParameterGuid
+    {
+        get { return ExplicitRule.ForcedReferenceParameterGuid; }
+        set
+        {
+            if (value == Guid.Empty)
+                ExplicitRule.ForcedReferenceParameterGuid = null;
+            else
+            {
+                ExplicitRule.ForcedReferenceParameterGuid = value;
+                ExplicitRule.ForcedReferenceValueFloat = null;
+                ExplicitRule.ForcedReferenceValueGuid = null;
+            }
+        }
+    }
+    Guid? forcedReferenceValueGuid
+    {
+        get { return ExplicitRule.ForcedReferenceValueGuid; }
+        set
+        {
+            if (value == Guid.Empty)
+                ExplicitRule.ForcedReferenceValueGuid = null;
+            else
+            {
+                ExplicitRule.ForcedReferenceParameterGuid = null;
+                ExplicitRule.ForcedReferenceValueFloat = null;
+                ExplicitRule.ForcedReferenceValueGuid = value;
+            }
+        }
+    }
+    double? referenceValueFloat
+    {
+        get { return Rule.ReferenceValueFloat; }
+        set
+        {
+            Rule.ReferenceParameterGuid = null;
+            Rule.ReferenceValueFloat = value;
+            Rule.ReferenceValueGuid = null;
+        }
+    }
+    double? forcedReferenceValueFloat
+    {
+        get { return ExplicitRule.ForcedReferenceValueFloat; }
+        set
+        {
+            ExplicitRule.ForcedReferenceParameterGuid = null;
+            ExplicitRule.ForcedReferenceValueFloat = value;
+            ExplicitRule.ForcedReferenceValueGuid = null;
+        }
+    }
+    Guid ParameterGuid
+    {
+        get { return Rule.ParameterGuid; }
+        set
+        {
+            if (IsExplicit)
+            {
+                if (value == ExplicitRule.ForcedParameterGuid)
+                {
+                    ExplicitRule.ForcedParameterGuid = Rule.ParameterGuid;
+                }
+            }
+            Rule.ParameterGuid = value;
+        }
+    }
+    string ParameterName
+    {
+        get {
+            return Rule.ParameterGuid != Guid.Empty ? Model.Parameters.Find(p => p.ParameterGuid == Rule.ParameterGuid).Name : string.Empty;
+        }
+    }
+    Guid ForcedParameterGuid
+    {
+        get { return ExplicitRule.ForcedParameterGuid; }
+        set
+        {
+            if (value == Rule.ParameterGuid)
+            {
+                if (ExplicitRule.ForcedParameterGuid != Model.OutputParameter.ParameterGuid)
+                {
+                    Rule.ParameterGuid = ExplicitRule.ForcedParameterGuid;
+                    ExplicitRule.ForcedParameterGuid = value;
+                }
+            }
+            else
+            {
+                ExplicitRule.ForcedParameterGuid = value;
+            }
+        }
+    }
+    string ForcedParameterName
+    {
+        get
+        {
+            if (ExplicitRule.ForcedParameterGuid != Guid.Empty) {
+                if (ExplicitRule.ForcedParameterGuid == Model.OutputParameter.ParameterGuid)
+                    return Model.OutputParameter.Name;
+                else if (Model.Parameters.Any(p => p.ParameterGuid == ExplicitRule.ForcedParameterGuid))
+                    return Model.Parameters.Find(p => p.ParameterGuid == ExplicitRule.ForcedParameterGuid).Name;
+            }
+            return string.Empty;
+        }
+    }
+    Modal parameterModal;
+    Modal operatorModal;
+    Modal referenceModal;
+    Modal forcedParameterModal;
+    Modal forcedOperatorModal;
+    Modal forcedReferenceModal;
+}

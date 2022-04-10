@@ -1,0 +1,138 @@
+﻿@page "/"   //first line is the routing to this page
+@layout LoginLayout
+@inject HttpClient HttpClient
+@inject NavigationManager NavigationManager
+@inject Sue3.Web.Blazor.Data.SueApiService SueApiService
+@inject Sue3.Web.Blazor.Data.ModelHandlerService ModelHandlerService
+@inject IToastService ToastService
+@inject IJSRuntime JSRuntime
+<!-- This is the login page-->
+
+<div class="row">
+    <div class="text-left">
+        <img style="height:100vh" src="./Assets/Images/Sue_work_column_transparent.png" />
+    </div>
+    <div class="col my-auto">
+        <div class="text-center" style="margin-left:10vw">
+            <img style="width:75%" src="./Assets/Images/analycat-design-76.png" />
+            <img style="height:60vh;" src="./Assets/Images/Sue_work_logo_transparent.png" />
+        </div>
+    </div>
+    <div class="col my-auto">
+        @if (!forgotPassword)
+        {
+            <EditForm class="text-center" style="margin-right:10vw" Model="@loginContainer" OnValidSubmit="@postLogin">
+                <div class="form-group">
+                    <InputText class="sue" @bind-Value="loginContainer.UserId" placeholder="Username" />
+                </div>
+                <div class="form-group">
+                    <InputText class="sue" @bind-Value="loginContainer.Password" placeholder="Password" type="password" autocomplete="on" />
+                </div>
+                <div class="form-group">
+                    <button class="btn btn-primary sue" type="submit">Login</button>
+                </div>
+                <div class="form-group">
+                    <input class="custom-control-inline" id="rememberMe" @bind="rememberMe" type="checkbox" />
+                    <label for="rememberMe">Keep me logged in</label>
+                </div>
+                <a @onclick="()=> { userContainer = new SUM.Model.Authentication.User() ; forgotPassword = true;}">
+                    Trouble logging in?
+                </a>
+            </EditForm>
+        }
+        else
+        {
+            <EditForm class="text-center" style="margin-right:10vw" Model="@userContainer" OnValidSubmit="@postSendEmail">
+                <div class="form-group">
+                    <InputText class="sue" @bind-Value="userContainer.UserId" placeholder="Username" />
+                </div>
+                <div class="form-group">
+                    <InputText class="sue" @bind-Value="userContainer.MailAddress" placeholder="Email" />
+                </div>
+                <div class="form-group">
+                    <button class="btn btn-primary sue" type="submit">Submit</button>
+                </div>
+                <div class="form-group">
+                    <button class="btn btn-primary sue" type="button" @onclick="()=> {loginContainer = new SUM.Model.Authentication.Login(); forgotPassword = false; }">Cancel</button>
+                </div>
+            </EditForm>
+        }
+    </div>
+    <div class="text-right">
+        <img style="height:100vh" src="./Assets/Images/Sue_work_column_flipped.jpg" />
+    </div>
+</div>
+@code {
+    SUM.Model.Authentication.Login loginContainer = new SUM.Model.Authentication.Login();
+    SUM.Model.Authentication.User userContainer = new SUM.Model.Authentication.User();
+    protected override async Task OnInitializedAsync() //built in function that runs async after first load
+    {
+        SueApiService.LogOut();
+        //checks if user credentials were remembered
+        var userId = await JSRuntime.InvokeAsync<string>("recallLoginId");
+        if (userId is not null && userId != string.Empty)
+        {
+            var token = await JSRuntime.InvokeAsync<string>("recallLoginToken");
+            if (token is not null && token != string.Empty)
+            {
+                SueApiService.UserId = userId;
+                SueApiService.AuthToken = token;
+                try
+                {
+                    await SueApiService.GetSuperUser(HttpClient); //checks if server can be reached on auto login
+                    NavigationManager.NavigateTo("Models");
+                }
+                catch
+                {
+                    ToastService.ShowError("Unable to reach server");
+                }
+            }
+        }
+    }
+    async Task postLogin() //all api calls have to be asynchronous
+    {
+        try
+        {
+            var result = await SueApiService.PostLogin(HttpClient, loginContainer);
+            if (!result.IsError)
+            {
+                if (rememberMe)
+                {
+                    //sets the localstorage
+                    await JSRuntime.InvokeVoidAsync("rememberUser", result.UserId, result.AuthorizationToken);
+                }
+                ToastService.ShowSuccess("Logged In");
+                NavigationManager.NavigateTo("Models");
+            }
+            else
+            {
+                ToastService.ShowError("Incorrect Credentials. Please try again.");
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("Unable to reach server");
+        }
+    }
+    async Task postSendEmail()
+    {
+        try
+        {
+            var result = await SueApiService.PostRequestPasswordChange(HttpClient, userContainer.UserId, userContainer.MailAddress);
+            if (!result.IsError)
+            {
+                ToastService.ShowSuccess("Email sent to change password");
+            }
+            else
+            {
+                ToastService.ShowError("Incorrect Credentials. Please try again.");
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("Unable to reach server");
+        }
+    }
+    bool forgotPassword = false;
+    bool rememberMe = false;
+}

@@ -1,0 +1,37 @@
+﻿@page "/manage"
+@layout MainLayout
+@inject NavigationManager NavigationManager
+@inject SueApiService SueApiService
+@inject ModelHandlerService ModelHandlerService
+
+<!-- This is the menu for managing the model: redirects to 1.1 if user it logged in-->
+
+    <div class="modal d-inline" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content border-0">
+                <div class="modal-body">
+                    <div class="d-flex justify-content-center">
+                        <div class="spinner-border" role="status">
+                            <span class="sr-only">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+@code {
+    //redirects to first submenu
+    protected override void OnInitialized()
+    {
+        if (SueApiService.LoggedIn)
+        {
+            ModelHandlerService.CurrentPane = ModelHandlerService.Panes.Manage;
+            ModelHandlerService.CurrentManagePane = ModelHandlerService.ManagePanes.Model;
+            NavigationManager.NavigateTo("Manage/Model");
+        }
+        else
+        {
+            NavigationManager.NavigateTo("");
+        }
+    }
+}

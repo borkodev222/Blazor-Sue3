@@ -1,0 +1,197 @@
+﻿@inject SueApiService SueApiService
+@inject HttpClient HttpClient
+@inject ModelHandlerService ModelHandlerService
+@inject NavigationManager NavigationManager
+@using SUM.Model.Components.Descriptive
+
+<!-- This is a component for managing all the parameters: manages displaying the list of parameters, and the <ManageParameter> component when creating/editing a component-->
+
+@if (showManageParameter)
+{
+    <ManageParameter ModelGuid="ModelGuid" ParameterCancelled="CurrentParameterCancelled" ParameterSaved="CurrentParameterSaved" Parameter="currentParameter" />
+}
+else
+{
+    <section class="mt-2" id="no-more-tables">
+        <table class="table table-hover">
+            <thead class="thead">
+                <tr>
+                    <th colspan="6">
+                        <div class="col">
+                            <button type="button" class="btn btn-primary sue" @onclick="CreateNewParameter">+Add New Variable</button>
+                            <button type="button" disabled="@(ModelHandlerService.CurrentModel.Parameters.Count < 2)" class="btn btn-primary sue @(ModelHandlerService.CurrentModel.Parameters.Count != 0?"float-right":string.Empty)" @onclick="SaveModel">Save Model</button>
+                        </div>
+                    </th>
+                </tr>
+                @if (Parameters.Count > 0)
+                {
+                    <tr>
+                        <th style="width:15%"></th>
+                        <th style="width:25%">Variable</th>
+                        <th style="width:15%">Type</th>
+                        <th style="width:15%">Increment</th>
+                        <th style="width:15%">Lower Value</th>
+                        <th style="width:15%">Upper Value</th>
+                    </tr>
+                }
+            </thead>
+            <tbody>
+                @foreach (var parameter in Parameters.OrderBy(c => c.SortOrder))
+                {
+                    <tr draggable="true" @ondrop="@(()=> DropParameter(parameter.ParameterGuid))" @ondrag="@(()=> StartDragParameter(parameter.ParameterGuid))" ondragover="event.preventDefault();">
+                        <td nowrap data-title="">
+                            <a style='padding:5px' data-toggle='tooltip' title='Edit'>
+                                <i class="oi oi-pencil" @onclick="()=>EditParameter(parameter.ParameterGuid)" />
+                            </a>
+                            <a style='padding:5px' data-toggle='tooltip' title='Delete'>
+                                <i class="oi oi-trash" @onclick="()=>DeleteParameter(parameter.ParameterGuid)" />
+                            </a>
+                            <a style='padding:5px' data-toggle='tooltip' title='Move Up'>
+                                <i class="oi oi-caret-top" @onclick="()=>SetParameterSortOrder(parameter.ParameterGuid,parameter.SortOrder-1)" />
+                            </a>
+                            <a style='padding:5px' data-toggle='tooltip' title='Move Down'>
+                                <i class="oi oi-caret-bottom" @onclick="()=>SetParameterSortOrder(parameter.ParameterGuid,parameter.SortOrder+1)" />
+                            </a>
+                        </td>
+                        <td>@parameter.Name</td>
+                        <td>@parameter.ParameterTypeId</td>
+                        <td>@(parameter.IsNumeric?parameter.Increment:string.Empty)</td>
+                        <td>@(parameter.IsNumeric?parameter.LowerValue:string.Empty)</td>
+                        <td>@(parameter.IsNumeric?parameter.UpperValue:string.Empty)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+@code {
+    [Parameter]
+    public List<Parameter> Parameters { get; set; }
+    [Parameter]
+    public EventCallback<List<Parameter>> ParametersChanged { get; set; }
+    [Parameter]
+    public Guid ModelGuid { get; set; }
+
+    bool showManageParameter = false;
+
+    Parameter currentParameter = new Parameter();
+
+    async Task SaveModel()
+    {
+        if (ModelHandlerService.CurrentModel.ModelStatusId == Model.EmptyModelStatusId)
+        {
+            ModelHandlerService.CurrentModel.ModelStatusId = Model.VariablesDefinedModelStatusId;
+            await SueApiService.PostCreateOrUpdateModel(HttpClient, ModelHandlerService.CurrentModel);
+        }
+        NavigationManager.NavigateTo("Train");
+    }
+
+    async Task CurrentParameterSaved()
+    {
+        ModelHandlerService.CurrentModel = await SueApiService.GetModel(HttpClient, ModelGuid);
+        Parameters = ModelHandlerService.CurrentModel.Parameters;
+        //editingParameter = false;
+        //creatingNewParameter = false;
+        showManageParameter = false;
+    }
+    void CurrentParameterCancelled()
+    {
+        showManageParameter = false;
+    }
+
+    void CreateNewParameter()
+    {
+        currentParameter = new Parameter()
+        {
+            ModelGuid = ModelGuid,
+            ParameterGuid = Guid.NewGuid(),
+            ParameterTypeId = "Numeric",
+            LowerValue = 0,
+            UpperValue = 1,
+            Increment = 1
+        };
+        //creatingNewParameter = true;
+        showManageParameter = true;
+    }
+    void EditParameter(Guid parameterGuid)
+    {
+        var parameterstring = System.Text.Json.JsonSerializer.Serialize(Parameters.Find(p => p.ParameterGuid == parameterGuid));
+        currentParameter = System.Text.Json.JsonSerializer.Deserialize<Parameter>(parameterstring);
+        if (currentParameter is not null)
+        {
+            //editingParameter = true;
+            showManageParameter = true;
+        }
+    }
+    async Task DeleteParameter(Guid parameterGuid)
+    {
+        var list = new List<Guid>();
+        list.Add(parameterGuid);
+        var opresult = await SueApiService.PostDeleteParameters(HttpClient, ModelGuid, list);
+        if (!opresult.IsError)
+        {
+            ModelHandlerService.CurrentModel = await SueApiService.GetModel(HttpClient, ModelGuid);
+            Parameters = ModelHandlerService.CurrentModel.Parameters;
+            if (Parameters.Count < 2)
+            {
+                ModelHandlerService.CurrentModel.ModelStatusId = Model.EmptyModelStatusId;
+                await SueApiService.PostCreateOrUpdateModel(HttpClient, ModelHandlerService.CurrentModel);
+            }
+        }
+    }
+    async Task SetParameterSortOrder(Guid parameterGuid, int newSortOrder)
+    {
+        var currentParameter = Parameters.Find(p => p.ParameterGuid == parameterGuid);
+        if (newSortOrder > currentParameter.SortOrder)
+        {
+            var maxSortOrder = Parameters.Max(p => p.SortOrder);
+            if (currentParameter.SortOrder < maxSortOrder)
+            {
+
+                foreach (var parameter in Parameters)
+                {
+                    if (parameter.SortOrder > currentParameter.SortOrder && parameter.SortOrder <= newSortOrder)
+                    {
+                        parameter.SortOrder -= 1;
+                    }
+                }
+                currentParameter.SortOrder = newSortOrder;
+            }
+        }
+        else if (newSortOrder < currentParameter.SortOrder)
+        {
+            var minSortOrder = Parameters.Min(p => p.SortOrder);
+            if (currentParameter.SortOrder > minSortOrder)
+            {
+                foreach (var parameter in Parameters)
+                {
+                    if (parameter.SortOrder < currentParameter.SortOrder && parameter.SortOrder >= newSortOrder)
+                    {
+                        parameter.SortOrder += 1;
+                    }
+                }
+                currentParameter.SortOrder = newSortOrder;
+            }
+        }
+        await SueApiService.PostCreateOrUpdateParameters(HttpClient, ModelGuid, Parameters);
+        await CurrentParameterSaved();
+    }
+    Guid currentDragParameter;//the guid of the parameter currently being dragged
+
+    async Task DropParameter(Guid parameterGuid)//the guid of the parameter which the dragged parameter was dropped on.
+    {
+        if (currentDragParameter != Guid.Empty)
+        {
+            var getDraggedCat = Parameters.FirstOrDefault(p => p.ParameterGuid == currentDragParameter);
+            var getDroppedCat = Parameters.FirstOrDefault(p => p.ParameterGuid == parameterGuid);
+            if (getDraggedCat is not null && getDroppedCat is not null)
+            {
+                await SetParameterSortOrder(currentDragParameter, getDroppedCat.SortOrder);
+            }
+        }
+    }
+    void StartDragParameter(Guid parameterGuid)
+    {
+        currentDragParameter = parameterGuid;
+    }
+}

@@ -1,0 +1,62 @@
+﻿@page "/manage/variables"
+@layout MainLayout
+@inject ModelHandlerService ModelHandlerService
+@inject NavigationManager NavigationManager
+@inject SueApiService SueApiService
+@inject HttpClient HttpClient
+
+<!-- This is the submenu for managing the parameters -->
+
+@if (loading)
+{
+    <div class="modal d-inline" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content border-0">
+                <div class="modal-body">
+                    <div class="d-flex justify-content-center">
+                        <div class="spinner-border" role="status">
+                            <span class="sr-only">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="row justify-content-center overflow-auto" style="margin-top:10vh;padding:1rem;margin-bottom:2rem;">
+        <div class="tab-content sue-form">
+            <div class="tab-pane active">
+                <ManageParameters ModelGuid="ModelGuid" Parameters="Parameters" />
+            </div>
+        </div>
+    </div>
+}
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        loading = true;
+        if (SueApiService.LoggedIn)
+        {
+            if(ModelHandlerService.CurrentModel is not null)
+            {
+                ModelHandlerService.CurrentPane = ModelHandlerService.Panes.Manage;
+                ModelHandlerService.CurrentManagePane = ModelHandlerService.ManagePanes.Variables;
+                ModelHandlerService.CurrentModel = await SueApiService.GetModel(HttpClient, ModelHandlerService.CurrentModel.ModelGuid);
+                loading = false;
+            }
+            else
+            {
+                NavigationManager.NavigateTo("Models");
+            }
+        }
+        else
+        {
+            NavigationManager.NavigateTo("");
+        }
+    }
+    bool loading;
+    List<SUM.Model.Components.Descriptive.Parameter> Parameters => ModelHandlerService.CurrentModel.Parameters;
+    Guid ModelGuid => ModelHandlerService.CurrentModel.ModelGuid;
+}

@@ -1,0 +1,103 @@
+﻿@using SUM.Model.Components.Descriptive
+@using SUM.Model.Components.Physical
+@inject IToastService ToastService
+@foreach (var sampleValue in sample.SampleValues)
+{
+    var parameter = model.Parameters.First(p => p.ParameterGuid == sampleValue.ParameterGuid);
+    <tr>
+        <td>@parameter.Name</td>
+        @if (parameter.IsNumeric)
+        {
+            <td>
+                <input class="form-control" type="number" id="@($"parameterInput{parameter.Name}")" @bind="sampleValue.Value" @bind:event="oninput"
+                       @onblur="()=> { ValidateNumber(parameter,sampleValue); }" min="@parameter.LowerValue" max="@parameter.UpperValue" step="@parameter.Increment" />
+            </td>
+            <td>
+                <input class="custom-range align-items-end" type="range" @bind-value="sampleValue.Value" @bind-value:event="oninput"
+                       min="@parameter.LowerValue" max="@parameter.UpperValue" step="@parameter.Increment" />
+            </td>
+        }
+        else
+        {
+            <td colspan="2">
+                <CategoryContainer MaxCategoriesLength="maxTotalCatNameLength" Parameter="parameter" SampleValue="sampleValue"/>
+            </td>
+            <!--
+            var catsNameLength = 0;
+            @foreach (var cat in parameter.Categories)
+            {
+                catsNameLength += cat.Value.Length;
+            }
+            <td colspan="2">
+                @if (catsNameLength < maxTotalCatNameLength)
+                {
+                    <div class="btn-group">
+                        @foreach (var cat in parameter.Categories)
+                        {
+                            <button type="button" class="btn btn-primary sue @(sampleValue.Value==cat.CategoryGuid.ToString()?"active":string.Empty)"
+                                    @onclick="()=> { sampleValue.Value = cat.CategoryGuid.ToString(); }">
+                                @cat.Value
+                            </button>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <select class="custom-select" @bind="sampleValue.Value">
+                        @foreach (var cat in parameter.Categories)
+                        {
+                            <option value="@cat.CategoryGuid.ToString()">
+                                @cat.Value
+                            </option>
+                        }
+                    </select>
+                }
+            </td>-->
+        }
+    </tr>
+}
+
+@code {
+    [Parameter]
+    public Model model { get; set; }
+    [Parameter]
+    public Sample sample { get; set; }
+    [Parameter]
+    public int maxTotalCatNameLength { get; set; }
+    bool ValidateNumber(Parameter parameter, SampleValue sampleValue)
+    {
+        bool result = double.TryParse(sampleValue.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double newValue);
+        if (result)
+        {
+            if (newValue > parameter.UpperValue)
+            {
+                ToastService.ShowWarning($"{sampleValue.Value} is out of range");
+                sampleValue.Value = parameter.UpperValue.ToString();
+                return false;
+            }
+            else if (newValue < parameter.LowerValue)
+            {
+                ToastService.ShowWarning($"{sampleValue.Value} is out of range");
+                sampleValue.Value = parameter.LowerValue.ToString();
+                return false;
+            }
+            else
+            {
+                var raw = parameter.TranslateValue(sampleValue.Value);
+                var displayValue = parameter.TranslateRawToDisplayValue(raw.Value);
+                if (displayValue != sampleValue.Value)
+                {
+                    ToastService.ShowWarning($"{sampleValue.Value} is out of range");
+                    sampleValue.Value = displayValue;
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            sampleValue.Value = parameter.LowerValue.ToString();
+            return false;
+        }
+        return true;
+    }
+}

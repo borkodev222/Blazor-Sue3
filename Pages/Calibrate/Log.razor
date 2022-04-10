@@ -1,0 +1,640 @@
+﻿@page "/CalibrateLog/Log"
+@layout MainLayout
+@inject HttpClient HttpClient
+@inject NavigationManager NavigationManager
+@inject SueApiService SueApiService
+@inject ModelHandlerService ModelHandlerService
+@inject IJSRuntime JSRuntime
+@inject IToastService ToastService 
+@using SUM.Model.Components.Physical
+@using SUM.Model.Components.Descriptive
+@using SUM.Model.Components.Accessories
+<style>
+    table {
+        border-collapse: collapse;
+    }
+
+    td {
+        position: relative;
+        padding: 5px 10px;
+    }
+
+    tr.strikeout td:before {
+        content: " ";
+        position: absolute;
+        top: 50%;
+        left: 0;
+        border-bottom: 1px solid #111;
+        width: 100%;
+    }
+
+    .popup {
+        left: -100%;
+        top: -100%;
+    }
+</style>
+@if (loading)
+{
+    <div class="modal d-inline" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content border-0">
+                <div class="modal-body">
+                    <div class="d-flex justify-content-center">
+                        <div class="spinner-border" role="status">
+                            <span class="sr-only">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <SueLog @ref="log" prediction="currentQuery" />
+    <Modal @ref="filterModal">
+        <Title>Edit Filter</Title>
+        <Body>
+            @if (currentFilter is not null)
+            {
+                var parameter = model.Parameters.Find(p => p.ParameterGuid == currentFilter.ParameterGuid);
+                @if (parameter.IsNumeric)
+                {
+                    var filterValue = currentFilter.FilterValues.First();
+                    <span>Between: <input @bind="filterValue.LowerValue" type="number" min="@parameter.LowerValue" max="@parameter.UpperValue" step="@parameter.Increment" /> - <input @bind="filterValue.UpperValue" type="number" min="@parameter.LowerValue" max="@parameter.UpperValue" step="@parameter.Increment" /></span>
+                }
+                else
+                {
+                    <Virtualize Items="currentFilter.FilterValues" Context="filterValue">
+                        <div class="form-check">
+                            <input type="checkbox" @bind="filterValue.IsSelected" />@parameter.Categories.Find(c => c.CategoryGuid == filterValue.ValueGuid).Value
+                        </div>
+                    </Virtualize>
+                }
+            }
+        </Body>
+        <Footer>
+            <button type="button" class="btn btn-primary sue" @onclick="ApplyFilter">Filter</button>
+            <button type="button" class="btn btn-primary sue" @onclick="ClearFilter">Reset Filter</button>
+            <button type="button" class="btn btn-danger sue" @onclick="()=> {currentFilter = default; filterModal.Close(); }">Cancel</button>
+        </Footer>
+    </Modal>
+    <Modal @ref="eraseUserWeightModal">
+        <Title>
+            Confirm
+        </Title>
+        <Body>
+            You have changed the correlation levers manually. Would you like to recalculate or continue to use yours?
+        </Body>
+        <Footer>
+            <button type="button" class="btn btn-primary sue" @onclick="()=>PostSaveTrainBuild(true)">Recalculate</button>
+            <button type="button" class="btn btn-primary sue" @onclick="()=>PostSaveTrainBuild(false)">Continue</button>
+            <button type="button" class="btn btn-danger sue" @onclick="()=> { eraseUserWeightModal.Close(); }">Cancel</button>
+        </Footer>
+    </Modal>
+    <Modal @ref="exportSampleModal">
+        <Title>Confirm Export</Title>
+        <Body>
+            <div class="form-check">
+                <input class="form-check-input" id="includePrediction" type="checkbox" @bind="includePredictions" />
+                <label type="checkbox" for="includePrediction">Include Sue's predictions (Slower)</label>
+            </div>
+            <div class="form-check">
+                <input disabled="@(!includePredictions)" class="form-check-input" id="useAllowIdenticalPoint" type="checkbox" @bind="useAllowIdenticalPoint" />
+                <label type="checkbox" for="useAllowIdenticalPoint">Match MFE calculation</label>
+            </div>
+        </Body>
+        <Footer>
+            <button type="button" class="btn btn-primary sue" @onclick="async() => { exportSampleModal.Close(); await ExportSamples(); }">Confirm Export</button>
+            <button type="button" class="btn btn-danger sue" @onclick="exportSampleModal.Close">Cancel</button>
+        </Footer>
+    </Modal>
+    <div style="margin-top:1rem;width:calc(85vw - 250px);margin-bottom:2rem;">
+        <div class="form-group text-center">
+            <button type="button" disabled="@(!mfeStopped)" class="btn btn-primary sue" @onclick="UndoChanges"><i class='oi oi-reload' style="transform:scaleX(-1)"></i> Undo Changes</button>
+            <button type="button" disabled="@(!mfeStopped)" class="btn btn-primary sue" @onclick="ExportSampleModalOpen">Export Samples</button>
+            <button type="button" disabled="@(!mfeStopped)" class="btn btn-primary sue" @onclick="SaveTrainBuild">Save as Training & Build</button>
+            <button type="button" disabled="@(!mfeStopped)" class="btn btn-primary sue" @onclick="CalibrateModel">Calibrate Model</button>
+            <button type="button" class="btn btn-primary sue @(!mfeStopped?"d-none":string.Empty)" @onclick="CalcMFE">Calculate MFE</button>
+            <button type="button" class="btn btn-primary sue @(mfeStopped?"d-none":string.Empty)" @onclick="()=> { mfeStopped = true; }">Stop MFE Calculation</button>
+
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover table-bordered">
+                <tbody>
+                    <tr>
+                        <td class="font-weight-bold" style="width:33%">Mean Forecasting Error:</td>
+                        <td style="width:33%">@(calculatedMFE?$"Completion: {MFECalculatingPercentage}%":string.Empty)</td>
+                        <td style="width:33%">@(calculatedMFE?$"MFE: {MFE}%":string.Empty)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover table-bordered">
+                <thead class="thead text-center">
+                    <tr>
+                        <th colspan="@(6+model.Parameters.Count)">
+                            <!-- If this gives error, ignore it; Blazor is being strange; If you can fix it, go for it-->
+                            <Pagination ListCount="ListCount" PageIndex="CurrentPage" PageIndexChanged="PageChanged" ItemsPerPage="ItemsPerPage" ItemsPerPageChanged="ItemsPerPageChanged"/>
+                        </th>
+                    </tr>
+                    <tr>
+                        <th>
+                            <a style='padding:5px' data-toggle='tooltip' title='Delete All Samples' @onclick="DeleteAllSamples">
+                                <i class='oi oi-trash' style="color: red" />
+                            </a>
+                        </th>
+                        <th>#</th>
+                        @foreach (var parameter in model.Parameters)
+                        {
+                            <th class="filterheader" @onclick="()=>FilterParameter(parameter.ParameterGuid)">@parameter.Name</th>
+                        }
+                        <th>Sue Decision</th>
+                        <th colspan="2">User Decision</th>
+                        <th>
+                            <a style='padding:5px' data-toggle='tooltip' title='Clear All Filters' @onclick="ClearAllFilters">
+                                <i class='oi oi-sort-descending' style="color:red" />
+                                <i class='oi oi-x' style="color: red" />
+                            </a>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="text-center">
+                    @foreach (var sample in uncalibratedSamples)
+                    {
+                    <tr class="@(sample.IsTemporarilyDeleted?"strikeout":string.Empty)">
+                        <td>
+                            <a style='padding:5px' data-toggle='tooltip' title='Delete Sample' @onclick="() => DeleteSample(sample.SampleId)">
+                                <i class="oi oi-trash" />
+                            </a>
+                        </td>
+                        <td>@(sample.SampleId+1)</td>
+                        @foreach (var sampleValue in sample.SampleValues)
+                        {
+                            var parameter = model.Parameters.Find(p => p.ParameterGuid == sampleValue.ParameterGuid);
+                            @if (parameter.IsNumeric)
+                            {
+                                <td>@sampleValue.Value</td>
+                            }
+                            else
+                            {
+                                <td>@parameter.Categories.Find(c => c.CategoryGuid == Guid.Parse(sampleValue.Value)).Value</td>
+                            }
+                        }
+                        @if (sample.InvalidatingRuleGuid is not null && sample.InvalidatingRuleGuid != Guid.Empty)
+                        {
+                            var invalidatingRule = model.Rules.Find(r => r.RuleGuid == sample.InvalidatingRuleGuid);
+                            <td colspan="3">Invalid Sample: @invalidatingRule.Name</td>
+                        }
+                        else
+                        {
+                            if (model.OutputParameter.IsNumeric)
+                            {
+                                if (sample.IsTemporarilyDeleted)
+                                {
+                                    <td></td>
+                                    <td colspan="2">@sample.OutputValue.Value</td>
+                                }
+                                else
+                                {
+                                    @if (samplesCalibrated)
+                                    {
+                                        if (calibratedSamples.Any(cs => cs.SampleId == sample.SampleId))
+                                        {
+                                            var calibratedSample = calibratedSamples.First(cs => cs.SampleId == sample.SampleId);
+                                            <td @onclick="() => OpenSueLog(calibratedSample)">@calibratedSample.OutputValue.SueValue</td>
+                                        }
+                                        else
+                                        {
+                                            <td></td>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <td></td>
+                                    }
+                                    <td>
+                                        <input class="form-control w-auto d-inline" type="number" @bind-value="sample.OutputValue.Value" @bind-value:event="oninput"
+                                               @onblur="()=>ChangeOutputTemp(sample)"
+                                               min="@model.OutputParameter.LowerValue" max="@model.OutputParameter.UpperValue" step="@model.OutputParameter.Increment" />
+                                    </td>
+                                    <td>
+                                        <input class="custom-range align-items-end w-auto" type="range" @bind-value="sample.OutputValue.Value" @bind-value:event="oninput"
+                                               @onblur="()=>ChangeOutputTemp(sample)"
+                                               min="@model.OutputParameter.LowerValue" max="@model.OutputParameter.UpperValue" step="@model.OutputParameter.Increment" />
+                                    </td>
+                                }
+                            }
+                            else
+                            {
+                                @if (sample.IsTemporarilyDeleted)
+                                {
+                                    <td></td>
+                                    <td colspan="2">@model.OutputParameter.Categories.Find(c => c.CategoryGuid == Guid.Parse(sample.OutputValue.Value)).Value</td>
+                                }
+                                else
+                                {
+                                    @if (samplesCalibrated)
+                                    {
+                                        if (calibratedSamples.Any(cs => cs.SampleId == sample.SampleId))
+                                        {
+                                            var calibratedSample = calibratedSamples.First(cs => cs.SampleId == sample.SampleId);
+                                            <td @onclick="() => OpenSueLog(calibratedSample)">@model.OutputParameter.Categories.Find(c => c.CategoryGuid == Guid.Parse(calibratedSample.OutputValue.SueValue)).Value</td>
+                                        }
+                                        else
+                                        {
+                                            <td></td>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <td></td>
+                                    }
+                                    <td colspan="2">
+                                        <CategoryContainer MaxCategoriesLength="20" Parameter="model.OutputParameter" SampleValue="sample.OutputValue" SelectedCategoryChanged="() => ChangeOutputTemp(sample)" />
+                                        @*<select class="custom-select w-auto" @bind="sample.OutputValue.Value"
+                                @onblur="()=>ChangeOutputTemp(sample)">
+                            @foreach (var cat in model.OutputParameter.Categories)
+                            {
+                                <option value="@cat.CategoryGuid.ToString()">
+                                    @cat.Value
+                                </option>
+                            }
+                        </select>*@
+                                    </td>
+                                }
+
+                            }
+                        }
+                        @if (samplesCalibrated && !sample.IsTemporarilyDeleted)
+                        {
+                            if (calibratedSamples.Any(cs => cs.SampleId == sample.SampleId))
+                            {
+                                @if (sample.OutputValue.Value == calibratedSamples.First(cs => cs.SampleId == sample.SampleId).OutputValue.SueValue)
+                                {
+                                    <td>✔</td>
+                                }
+                                else
+                                {
+                                    <td>✘</td>
+                                }
+                            }
+                            else
+                            {
+                                <td></td>
+                            }
+                        }
+                        else
+                        {
+                            <td></td>
+                        }
+                    </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (exportingSamples)
+        {
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered">
+                    <tbody>
+                        <tr>
+                            <td class="font-weight-bold">@($"Preparing Export: {exportSamplesPercentage}%")</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+}
+@code{
+    protected override async Task OnInitializedAsync()
+    {
+        loading = true;
+        if (SueApiService.LoggedIn)
+        {
+            if (ModelHandlerService.CurrentModel is not null)
+            {
+                ModelHandlerService.CurrentPane = ModelHandlerService.Panes.Calibrate;
+                await GetSamples();
+                loading = false;
+            }
+            else
+            {
+                NavigationManager.NavigateTo("Models");
+            }
+        }
+        else
+        {
+            NavigationManager.NavigateTo("");
+        }
+    }
+    async Task PageChanged(int newPage)
+    {
+        loading = true;
+        CurrentPage = newPage;
+        await GetSamples();
+        loading = false;
+    }
+    async Task GetSamples()
+    {
+        await GetUncalibratedSamples();
+        GetCalibratedSamples(); // Should not make await since this should occur asynchronously.
+    }
+    async Task GetUncalibratedSamples()
+    {
+        samplesCalibrated = false;
+        var logAndCalibrateView = await SueApiService.PostCheckUncalibratedSamples(HttpClient, CurrentPage, ItemsPerPage, model.ModelGuid, filters);
+        ListCount = logAndCalibrateView.TotalSamplesCount;
+        uncalibratedSamples = logAndCalibrateView.Samples;
+        filters = logAndCalibrateView.Filters;
+    }
+    async Task GetCalibratedSamples()
+    {
+        LogAndCalibrateViewModel dto = new LogAndCalibrateViewModel()
+        {
+            Model = model,
+            Filters = filters,
+        };
+        calibratedSamples = await SueApiService.PostCheckCalibratedSamples(HttpClient, CurrentPage, ItemsPerPage, dto);
+        ToastService.ShowSuccess("Samples Calibrated");
+        samplesCalibrated = true;
+        StateHasChanged();
+    }
+    async Task UndoChanges()
+    {
+        loading = true;
+        calculatedMFE = false;
+        await PostCancelAllCalculations();
+        await SueApiService.PostUndoAllChanges(HttpClient, model.ModelGuid);
+        ToastService.ShowSuccess("Undo all changes");
+        ModelHandlerService.CurrentModel = await SueApiService.GetModel(HttpClient, model.ModelGuid);
+        ModelHandlerService.CalibrationSaved = true;
+        await GetSamples();
+        loading = false;
+    }
+    void ExportSampleModalOpen()
+    {
+        includePredictions = false;
+        useAllowIdenticalPoint = false;
+        exportSampleModal.Open();
+    }
+    async Task ExportSamples()
+    {
+        exportSamplesPercentage = 0.00;
+        exportingSamples = true;
+        await PostCancelCalculation(AsynchronousOperationManager.AsynchronousOperationType.ExportSamples);
+        await SueApiService.GetExportSamples(HttpClient, model.ModelGuid, includePredictions, useAllowIdenticalPoint);
+        bool exportFinished = false;
+        while (!exportFinished)
+        {
+            await Task.Delay(300);
+            exportSamplesPercentage = Math.Round(await SueApiService.GetPercentage(HttpClient, SUM.Model.Components.Accessories.AsynchronousOperationManager.AsynchronousOperationType.ExportSamples), 2);
+            StateHasChanged();
+            if (exportSamplesPercentage == 100)
+                exportFinished = true;
+        }
+        var samplesString = await SueApiService.RetrieveExportSamples(HttpClient);
+        exportingSamples = false;
+        await JSRuntime.InvokeVoidAsync("downloadCSV", $"{model.Name} - Export Samples.csv", samplesString);
+        StateHasChanged();
+    }
+    async Task SaveTrainBuild()
+    {
+        if (model.Parameters.Any(p => p.UserWeight != p.CalculatedWeight))
+        {
+            eraseUserWeightModal.Open();
+        }
+        else
+            await PostSaveTrainBuild(true);
+    }
+    async Task PostSaveTrainBuild(bool eraseWeights)
+    {
+        await PostCancelAllCalculations();
+        LogAndCalibrateViewModel dto = new LogAndCalibrateViewModel()
+        {
+            Model = model,
+        };
+        var opresult = await SueApiService.PostSaveCalibration(HttpClient, dto, eraseWeights);
+        if (opresult.IsError)
+        {
+            ToastService.ShowError(opresult.Error);
+        }
+        else
+        {
+            ModelHandlerService.CurrentModel = await SueApiService.GetModel(HttpClient, model.ModelGuid);
+            ModelHandlerService.CalibrationSaved = true;
+            if (model.ModelStatusId == Model.TrainedModelStatusId)
+            {
+                NavigationManager.NavigateTo("Use");
+            }
+            else
+            {
+                NavigationManager.NavigateTo("Train");
+            }
+
+        }
+    }
+    async Task CalibrateModel()
+    {
+        await PostCancelAllCalculations();
+        calculatedMFE = false;
+        mfeStopped = true;
+        LogAndCalibrateViewModel dto = new LogAndCalibrateViewModel()
+        {
+            Model = model,
+        };
+        await SueApiService.PostTemporaryCalibration(HttpClient, dto);
+        ToastService.ShowSuccess("Model Calibrated");
+        ModelHandlerService.CalibrationSaved = false;
+        await GetSamples();
+    }
+    async Task CalcMFE()
+    {
+        await CalibrateModel();
+        await SueApiService.PostCalculateMFE(HttpClient, model.ModelGuid);
+        bool mfeFinished = false;
+        mfeStopped = false;
+        while (!mfeFinished && !mfeStopped)
+        {
+            await Task.Delay(300);
+            MFECalculatingPercentage = Math.Round(await SueApiService.GetPercentage(HttpClient, SUM.Model.Components.Accessories.AsynchronousOperationManager.AsynchronousOperationType.CalculateMFE), 2);
+            MFE = Math.Round(await SueApiService.GetMFEScore(HttpClient) * 100, 2);
+            calculatedMFE = true;
+            StateHasChanged();
+            if (MFECalculatingPercentage == 100)
+                mfeFinished = true;
+        }
+        mfeStopped = true;
+        StateHasChanged();
+    }
+    async Task DeleteAllSamples()
+    {
+        ModelHandlerService.CalibrationSaved = false;
+        if (filters.Any(f => f.FilterValues.Any(fv => fv.IsSelected)))
+        {
+            await SueApiService.PostDeleteAllSampleFilteredTemp(HttpClient, model.ModelGuid, filters);
+            ToastService.ShowSuccess("Deleted all filtered samples");
+        }
+        else
+        {
+            await SueApiService.PostDeleteAllSampleTemp(HttpClient, model);
+            ToastService.ShowSuccess("Deleted all samples");
+        }
+        await GetSamples();
+    }
+    async Task DeleteSample(int sampleId)
+    {
+        await SueApiService.PostDeleteSampleTemp(HttpClient, model.ModelGuid, sampleId);
+        ToastService.ShowSuccess("Deleted sample");
+        ModelHandlerService.CalibrationSaved = false;
+        await GetSamples();
+    }
+    void FilterParameter(Guid parameterGuid)
+    {
+        var parameter = model.Parameters.Find(p => p.ParameterGuid == parameterGuid);
+        if (filters.Any(f => f.ParameterGuid == parameterGuid) && filters.Find(f => f.ParameterGuid == parameterGuid).FilterValues.Any(fv => fv.IsSelected))
+        {
+            var filter = filters.Find(f => f.ParameterGuid == parameterGuid);
+            currentFilter = new ParameterFilter()
+            {
+                ParameterGuid = parameterGuid,
+                ParameterTypeId = parameter.ParameterTypeId,
+                FilterValues = new List<ParameterFilterValue>()
+            };
+            foreach (var filterValue in filter.FilterValues)
+            {
+                currentFilter.FilterValues.Add(new ParameterFilterValue()
+                {
+                    LowerValue = filterValue.LowerValue,
+                    UpperValue = filterValue.UpperValue,
+                    IsSelected = filterValue.IsSelected,
+                    ValueGuid = filterValue.ValueGuid,
+                });
+            }
+        }
+        else
+        {
+            var parameterFilter = new ParameterFilter()
+            {
+                ParameterGuid = parameterGuid,
+                ParameterTypeId = parameter.ParameterTypeId,
+                FilterValues = new List<ParameterFilterValue>()
+            };
+            if (parameter.IsNumeric)
+            {
+                parameterFilter.FilterValues.Add(new ParameterFilterValue()
+                {
+                    LowerValue = parameter.LowerValue,
+                    UpperValue = parameter.UpperValue,
+                    IsSelected = false,
+                    ValueGuid = default,
+                });
+            }
+            else
+            {
+                foreach (var cat in parameter.Categories)
+                {
+                    parameterFilter.FilterValues.Add(new ParameterFilterValue()
+                    {
+                        LowerValue = default,
+                        UpperValue = default,
+                        IsSelected = false,
+                        ValueGuid = cat.CategoryGuid,
+                    });
+                }
+            }
+            currentFilter = parameterFilter;
+        }
+        filterModal.Open();
+    }
+    async Task ClearAllFilters()
+    {
+        filters = new List<ParameterFilter>();
+        await GetSamples();
+    }
+    async Task ApplyFilter()
+    {
+        filterModal.Close();
+        var parameter = model.Parameters.Find(p => p.ParameterGuid == currentFilter.ParameterGuid);
+        if (parameter.IsNumeric)
+        {
+            currentFilter.FilterValues.First().IsSelected = true;
+        }
+        filters.RemoveAll(f => f.ParameterGuid == currentFilter.ParameterGuid);
+        filters.Add(currentFilter);
+        CurrentPage = 0;
+        await GetSamples();
+        currentFilter = default;
+    }
+    async Task ClearFilter()
+    {
+        filterModal.Close();
+        filters.RemoveAll(f => f.ParameterGuid == currentFilter.ParameterGuid);
+        await GetSamples();
+        currentFilter = default;
+    }
+    async Task PostCancelCalculation(AsynchronousOperationManager.AsynchronousOperationType asynchronousOperationType)
+    {
+        await SueApiService.PostCancelCalculation(HttpClient, asynchronousOperationType);
+    }
+    async Task PostCancelAllCalculations()
+    {
+        await SueApiService.PostCancelAllOperations(HttpClient);
+    }
+    async Task ChangeOutputTemp(Sample sample)
+    {
+        LogAndCalibrateViewModel dto = new LogAndCalibrateViewModel()
+        {
+            Model = model,
+            Samples = new List<Sample>()
+            {
+                sample
+            }
+        };
+        await SueApiService.PostChangeSampleOutputTemp(HttpClient, dto);
+        ToastService.ShowSuccess("Changed sample output");
+        ModelHandlerService.CalibrationSaved = false;
+    }
+    void OpenSueLog(PredictedQuery prediction)
+    {
+        currentQuery = prediction;
+        StateHasChanged();
+        log.Open();
+    }
+    Model model => ModelHandlerService.CurrentModel;
+    List<Sample> uncalibratedSamples;
+    IEnumerable<PredictedQuery> calibratedSamples;
+    List<ParameterFilter> filters = new List<ParameterFilter>();
+    ParameterFilter currentFilter;
+    PredictedQuery currentQuery;
+    SueLog log;
+    int ListCount;
+    int CurrentPage
+    {
+        get { return ModelHandlerService.CalibrationPageIndex; }
+        set { ModelHandlerService.CalibrationPageIndex = value; }
+    }
+    int ItemsPerPage { get; set; } = 10;
+    async Task ItemsPerPageChanged(int newItemsPerPage)
+    {
+        CurrentPage = 0;
+        ItemsPerPage = newItemsPerPage;
+        await GetSamples();
+        StateHasChanged();
+    }
+    bool samplesCalibrated { get; set; } = false;
+    bool exportingSamples { get; set; } = false;
+    bool includePredictions { get; set; } = false;
+    bool useAllowIdenticalPoint { get; set; } = false;
+    bool loading { get; set; } = true;
+    bool calculatedMFE { get; set; } = false;
+    bool mfeStopped { get; set; } = true;
+    double exportSamplesPercentage { get; set; }
+    double MFE { get; set; } = 0.00;
+    double MFECalculatingPercentage { get; set; }
+    Modal exportSampleModal;
+    Modal filterModal;
+    Modal eraseUserWeightModal;
+}

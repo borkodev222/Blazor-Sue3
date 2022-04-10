@@ -1,0 +1,30 @@
+﻿@page "/visualise"
+@layout MainLayout
+@inject HttpClient httpClient
+@inject NavigationManager NavigationManager
+@inject Sue3.Web.Blazor.Data.SueApiService SueApiService
+@inject Sue3.Web.Blazor.Data.ModelHandlerService ModelHandlerService
+
+<!-- This is the menu for visualise: redirects to mindmap-->
+
+@code{
+    protected override void OnInitialized()
+    {
+        if (SueApiService.LoggedIn)
+        {
+            if (ModelHandlerService.CurrentModel is not null)
+            {
+                ModelHandlerService.CurrentPane = ModelHandlerService.Panes.Visualise;
+                NavigationManager.NavigateTo("Visualise/MindMap");
+            }
+            else
+            {
+                NavigationManager.NavigateTo("Models");
+            }
+        }
+        else
+        {
+            NavigationManager.NavigateTo("");
+        }
+    }
+}

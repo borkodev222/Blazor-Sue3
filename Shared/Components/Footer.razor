@@ -1,0 +1,36 @@
+﻿@inject ModelHandlerService ModelHandlerService
+@inject IJSRuntime JSRuntime
+@if (ModelHandlerService.CurrentPane != ModelHandlerService.Panes.ModelList && ModelHandlerService.CurrentPane != ModelHandlerService.Panes.Manage)
+{
+    <div class="footer" style="z-index:99;">
+            @if (ModelHandlerService.CurrentModel is not null)
+            {
+                <div class="font-weight-bold" @onclick="ShowModelGuid">
+                    @ModelHandlerService.CurrentModelOwner - Model #@ModelHandlerService.CurrentModel.ModelNumber - @ModelHandlerService.CurrentModel.Name
+                </div>
+            }
+    </div>
+}
+@code {
+    [Parameter]
+    public Modal Modal { get; set; }//This Modal is passed in from the mainlayout, since it should not appear in the sidebar, but be controlled from the sidebar.
+    
+    void ShowModelGuid()
+    {
+        Modal.SetTitle(@<text>Model HashId</text>);
+        Modal.SetBody(@<text>@ModelHandlerService.CurrentModel.ModelGuid</text>);
+        Modal.SetFooter(builder =>
+        {
+            builder.OpenElement(0, "button");
+            builder.AddAttribute(1, "class", "btn btn-primary sue");
+            builder.AddAttribute(2, "onclick", EventCallback.Factory.Create(this, async () => { await CopyToClipboard(); Modal.Close(); }));
+            builder.AddContent(3, "Copy to Clipboard");
+            builder.CloseElement();
+        });
+        Modal.Open();
+    }
+    async Task CopyToClipboard()
+    {
+        await JSRuntime.InvokeVoidAsync("clipboardCopy.copyText", ModelHandlerService.CurrentModel.ModelGuid.ToString());
+    }
+}

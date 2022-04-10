@@ -1,0 +1,267 @@
+﻿@import url('open-iconic/font/css/open-iconic-bootstrap.min.css');
+@import url('Fonts/CarosSoft.css');
+/*Custom Sue CSS*/
+
+html, body {
+    font-family: CarosSoft,'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+a, .btn-link {
+    color: #0366d6;
+} 
+
+.btn-primary {
+    transition: all 0.5s ease-in-out!important;
+}
+
+.btn-group{
+    display:inline-block;
+}
+
+.nav-item a {
+    height: 2.5rem !important;
+    line-height: 2.5rem !important;
+}
+
+.blazored-toast{
+    width:20rem!important;
+}
+
+.footer {
+    position: fixed;
+    left: 250px;
+    bottom: 0;
+    width: 100%;
+    padding: 0.75rem;
+    background-color: white;
+    box-shadow: 0rem 0rem 0.75rem 0px rgb(0 0 0 / 10%);
+}
+
+.sue-text {
+    color: #263c91;
+}
+
+.sue {
+    padding: 9px !important;
+    border-radius: 7px;
+    border: 1px solid #eee;
+    transition: .3s border-color,.3s box-shadow;
+    box-shadow: 0 0 5px 1px rgba(0,0,0,0.4);
+}
+
+.sue:hover:not([type=submit]):not([type=button]) {
+    border: 1px solid #aaa;
+}
+
+.sue:focus:not([type=submit]):not([type=button]) {
+     border: 1px solid #aaa;
+     box-shadow: inset 0 0 5px #aaa!important;
+     transition: 0.3s box-shadow;
+     outline:none;
+}
+
+.btn.btn-primary.sue {
+    padding: 9px 20px !important;
+    border: none;
+    inline-size: max-content;
+}
+
+.btn.btn-primary.sue:not(:disabled) {
+    box-shadow: inset 0px 15px 3px rgb(255 255 255 / 20%), inset 0px -5px 15px rgb(0 0 0 / 70%);
+}
+.btn.btn-primary.sue.active {
+    color: #555;
+    background-color: #eff;
+    font-weight: bold;
+    text-decoration: underline;
+    border: none;
+    box-shadow: inset -3px 5px 10px rgb(0 0 0 / 10%), inset 1px 2px 4px rgb(0 0 0 / 90%);
+}
+.btn.btn-primary.sue:hover:not(:disabled) {
+    box-shadow: none;
+    background-color: #1f8ecf;
+}
+.btn.btn-primary.sue:focus {
+    box-shadow: inset 0 0 5px #aaa;
+}
+.btn.btn-primary.sue.active:focus {
+    box-shadow: inset -3px 5px 10px rgb(0 0 0 / 10%), inset 1px 2px 4px rgb(0 0 0 / 90%);
+}
+
+.sue-form {
+    box-shadow: 0 0.25rem 0.75rem 0px rgb(0 0 0 / 10%);
+    background-color: white;
+    border-radius: 10px;
+    padding: 30px;
+}
+
+.sue-nav {
+    background-color:white;
+}
+.sue-nav:hover:not(.active) {
+    background: #4c4c4c;
+    color: white!important;
+    transition: background 0.3s, color 0.3s;
+}
+.sue-nav .active {
+    background: #faa21c;
+    color: white!important;
+    transition: background 0.3s, color 0.3s;
+}
+
+.popup {
+    position: absolute;
+    background: rgba(120,120,120,0.8);
+    padding: 20px;
+    border-radius: 5px;
+    z-index: 100;
+    width: initial;
+    flex-wrap:wrap
+}
+
+.vh-50{
+    height:50vh;
+}
+
+@media only screen and (max-width: 800px) {
+
+    /* Force table to not be like tables anymore */
+    #no-more-tables table,
+    #no-more-tables thead,
+    #no-more-tables tbody,
+    #no-more-tables th,
+    #no-more-tables td,
+    #no-more-tables tr {
+        display: block;
+    }
+
+        /* Hide table headers (but not display: none;, for accessibility) */
+        #no-more-tables thead tr {
+            position: absolute;
+            top: -9999px;
+            left: -9999px;
+        }
+
+    #no-more-tables tr {
+        border: 1px solid #ccc;
+    }
+
+    #no-more-tables td {
+        /* Behave  like a "row" */
+        border: none;
+        border-bottom: 1px solid #eee;
+        position: relative;
+        padding-left: 50%;
+        white-space: normal;
+        text-align: left;
+    }
+
+        #no-more-tables td:before {
+            /* Now like a table header */
+            position: absolute;
+            /* Top/left values mimic padding */
+            top: 6px;
+            left: 6px;
+            width: 45%;
+            padding-right: 10px;
+            white-space: nowrap;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        /*
+	Label the data
+	*/
+        #no-more-tables td:before {
+            content: attr(data-title);
+        }
+}
+
+
+/* width */
+::-webkit-scrollbar {
+    width: 10px;
+}
+
+/* Track */
+::-webkit-scrollbar-track {
+    box-shadow: inset 0 0 5px #e0e0e0;
+    border-radius: 5px;
+}
+
+/* Handle */
+::-webkit-scrollbar-thumb {
+    background: #e0e0e0;
+    border-radius: 5px;
+}
+
+.filterheader::after {
+    content: "\25BE";
+    float: right;
+}
+
+.sueCarousel {
+    animation: carousel 1s normal ease-in-out
+}
+
+@keyframes carousel {
+    0% {
+        transform: translateX(0);
+    }
+    49% {
+        transform: translateX(-25vw);
+        opacity: 0;
+    }
+    50% {
+        transform: translateX(25vw);
+        opacity: 0;
+    }
+    100% {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+.blazored-toast-container{
+    z-index:101!important;
+}
+/*End Custom Sue CSS*/
+.btn-primary {
+    color: #fff;
+    background-color: #1b6ec2;
+    border-color: #1861ac;
+}
+
+.content {
+    padding-top: 1.1rem;
+}
+
+.valid.modified:not([type=checkbox]) {
+    /*outline: 1px solid #26b050;*/
+}
+
+.invalid {
+    outline: 1px solid red;
+}
+
+.validation-message {
+    color: red;
+}
+
+#blazor-error-ui {
+    background: lightyellow;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}

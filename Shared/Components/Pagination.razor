@@ -1,0 +1,102 @@
+﻿<style>
+    .page-link{
+        line-height:unset;
+        border:unset;
+    }
+</style>
+<ul class="pagination" style="margin-block-end: unset;">
+    <li class="page-item @( PageIndex == 0 ? "disabled" : string.Empty)" @onclick="()=> { if (PageIndex != 0) { PageIndex = 0; PageIndexChanged.InvokeAsync(PageIndex); } }">
+        <a class="page-link">
+            <span class="oi oi-chevron-left" />
+        </a>
+    </li>
+    <li class="page-item @( PageIndex == 0 ? "disabled" : string.Empty)" @onclick="()=> { if (PageIndex != 0) { PageIndex--; PageIndexChanged.InvokeAsync(PageIndex); } }">
+        <a class="page-link">
+            <span class="oi oi-caret-left" />
+        </a>
+    </li>
+    @if (PageIndex > 4)
+    {
+        <li class="page-item" @onclick="()=> { PageIndex = ((int)(PageIndex / 5)) * 5 - 1; PageIndexChanged.InvokeAsync(PageIndex);}">
+            <a class="page-link">
+                <span class="oi oi-ellipses" />
+            </a>
+        </li>
+    }
+    @for (var x = ((int)(PageIndex / 5)) * 5; x < ((int)(PageIndex / 5)) * 5 + 5 && x <= (ListCount - 1) / ItemsPerPage; x++)
+    {
+        var localIndex = x;
+        <li class="page-item @(localIndex== PageIndex?"active":string.Empty)" @onclick="()=> { if (PageIndex != localIndex) { PageIndex = localIndex; PageIndexChanged.InvokeAsync(PageIndex); } }">
+            <a class="page-link">
+                <span>
+                    @(localIndex + 1)
+                </span>
+            </a>
+        </li>
+    }
+    @if ((int)((ListCount - 1) / ItemsPerPage) >= ((int)(PageIndex / 5)) * 5 + 5)
+    {
+        <li class="page-item" @onclick="()=> { PageIndex = ((int)(PageIndex / 5)) * 5+5; PageIndexChanged.InvokeAsync(PageIndex);}">
+            <a class="page-link">
+                <span class="oi oi-ellipses" />
+            </a>
+        </li>
+    }
+    <li class="page-item @(( PageIndex + 1) *  ItemsPerPage >=  ListCount ? "disabled" : string.Empty)" @onclick="()=> { if ((PageIndex + 1) * ItemsPerPage < ListCount) { PageIndex++; PageIndexChanged.InvokeAsync(PageIndex); } }">
+        <a class="page-link">
+            <span class="oi oi-caret-right" />
+        </a>
+    </li>
+    <li class="page-item @(( PageIndex + 1) *  ItemsPerPage >=  ListCount ? "disabled" : string.Empty)" @onclick="()=> { if (PageIndex != (ListCount - 1) / ItemsPerPage) { PageIndex = (ListCount - 1) / ItemsPerPage; PageIndexChanged.InvokeAsync(PageIndex); } }">
+        <a class="page-link">
+            <span class="oi oi-chevron-right" />
+        </a>
+    </li>
+    <li class="page-item">
+        <a class="page-link" style="white-space:nowrap">
+            <span>Page @(PageIndex+1) of @(((int)((ListCount-1)/ItemsPerPage))+1)</span>
+        </a>
+    </li>
+    <li class="page-item">
+        <a class="page-link" style="padding-bottom:unset;padding-left:unset;padding-top:unset">
+            <select class="custom-select w-auto" style="border:unset" @bind="internalitemsPerPage">
+                <option value="5">
+                    5
+                </option>
+                <option value="10">
+                    10
+                </option>
+                <option value="25">
+                    25
+                </option>
+                <option value="50">
+                    50
+                </option>
+            </select>
+            <span>Items per page</span>
+        </a>
+    </li>
+</ul>
+@code{
+    [Parameter]
+    public int PageIndex { get; set; }
+    [Parameter]
+    public EventCallback<int> PageIndexChanged{ get; set; }
+    [Parameter]
+    public int ListCount { get; set; }
+    // An internal Items Per Page is used, since we need to bind the items per page value to the select on line 62.
+    // When the select is updated, we need to propagate the change upwards using the InvokeAsync.
+    // I cant think of a way to bind the select to the Items Per Page parameter, and do the Invoke when its updated.
+    // Therefore, we bind first to the internal, and when it is set, we do the Invoke.
+    int internalitemsPerPage {
+        get { return ItemsPerPage; }
+        set {
+            ItemsPerPage = value;
+            ItemsPerPageChanged.InvokeAsync(ItemsPerPage);
+        }
+    }
+    [Parameter]
+    public int ItemsPerPage { get; set; }
+    [Parameter]
+    public EventCallback<int> ItemsPerPageChanged { get; set; }
+}

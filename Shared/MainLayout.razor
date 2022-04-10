@@ -1,0 +1,31 @@
+﻿<!--This just sets the basic configs around the contents of the popup message forms-->
+@inherits LayoutComponentBase
+@using Blazored.Toast.Configuration
+<BlazoredToasts Position="ToastPosition.BottomRight"
+                Timeout="5" />
+<div class="page">
+    <div class="sidebar" style="background:white; z-index:100;">
+        <!--Razor components can be used like html markup elements-->
+        <NavMenu NavigationControlModal="NavigationControlModal" OpenCreateNewUserModalInstance="OpenCreateNewUserModal" />
+    </div>
+    <div class="main" style=" background-color: rgba(0,0,0,1.5%); overflow-x:hidden">
+        <div class="content" style="padding:0; padding-left:0.95rem!important; padding-right:0.95rem!important; ">
+            <CreateNewUserModal @ref="CreateNewUserModalInstance" />
+            <Modal @ref="NavigationControlModal" />
+            @Body
+            <Footer Modal="NavigationControlModal" />
+        </div>
+    </div>
+    <div class="sidebar" style=" box-shadow:none; right:0px; width:auto; background-color: rgba(0,0,0,1.5%); z-index:100;">
+        <img class="vh-100 float-right" src="./Assets/Images/Sue_work_column_flipped_transparent.png" />
+    </div>
+</div>
+@code{ //defines a code block, this is not html
+    void OpenCreateNewUserModal()
+    {
+        CreateNewUserModalInstance.Open();
+    }
+    CreateNewUserModal CreateNewUserModalInstance { get; set; }
+    Modal NavigationControlModal { get; set; }
+
+}

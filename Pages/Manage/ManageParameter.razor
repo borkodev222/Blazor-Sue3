@@ -1,0 +1,347 @@
+﻿@inject SueApiService SueApiService
+@inject HttpClient HttpClient
+@inject IToastService ToastService
+@inject ModelHandlerService ModelHandlerService
+@using System.Text.RegularExpressions 
+
+<!-- This is a component for managing a parameter: used in 1.2 and 1.3-->
+
+<EditForm autocomplete="off" Model="Parameter">
+    <div class="form-group row">
+        <label class="col col-form-label" for="parameterName">@(Parameter.IsOutput?"Question":"Name")</label>
+        <div class="col">
+            <input type="text" id="parameterName" @bind-value="Parameter.Name" @bind-value:event="oninput" class="sue" />
+        </div>
+    </div>
+    <div class="form-group">
+        <InputRadioGroup @bind-Value="Parameter.ParameterTypeId">
+            @foreach (var type in (ParameterTypes[])Enum.GetValues(typeof(ParameterTypes)))
+            {
+                <InputRadio id="@("parameterType"+type)" class="custom-control-inline" Value="type.ToString()" />
+                <label for="@("parameterType"+type)">@type</label>
+                <br>
+            }
+        </InputRadioGroup>
+    </div>
+    <hr />
+    @if (Parameter.IsNumeric)
+    {
+        <div class="form-group row">
+            <label class="col col-form-label" for="parameterLower">Lower Value</label>
+            <div class="col">
+                <input id="parameterLower" @bind-value="ParameterLowerValue" @bind-value:event="oninput" @onblur="()=>{ _parameterLowerValue = Parameter.LowerValue.ToString(); }" class="sue" />
+            </div>
+        </div>
+        <div class="form-group row">
+            <label class="col col-form-label" for="parameterUpper">Upper Value</label>
+            <div class="col">
+                <input id="parameterUpper" @bind-value="ParameterUpperValue" @bind-value:event="oninput" @onblur="()=>{ _parameterUpperValue = Parameter.UpperValue.ToString(); }" class="sue" />
+            </div>
+        </div><div class="form-group row">
+            <label class="col col-form-label" for="parameterIncrement">Increment</label>
+            <div class="col">
+                <input id="parameterIncrement" @bind-value="ParameterIncrement" @bind-value:event="oninput" @onblur="()=>{ _parameterIncrement = Parameter.Increment.ToString(); }" class="sue" />
+            </div>
+        </div>
+    }
+    @if (Parameter.IsCategorical)
+    {
+        <div class="form-group">
+            <input class="custom-control-inline" id="ordinalCheckBox" @bind="Parameter.IsOrdinal" type="checkbox" />
+            <label for="ordinalCheckBox">Is Ordinal</label>
+        </div>
+        <div class="form-group row">
+            <label class="col col-form-label" for="categoryValue">Value</label>
+            <div class="col">
+                <input class="sue" id="categoryValue" @bind-value="currentCategoryValue" @bind-value:event="oninput" type="text" />
+            </div>
+            <div class="col">
+                <button type="button" class="btn btn-primary sue" disabled="@(currentCategoryValue==string.Empty)" @onclick="() => { AddCategory(currentCategoryValue); }">Add</button>
+            </div>
+        </div>
+        <hr />
+        <div class="form-group">
+            <button type="button" class="btn btn-primary sue" @onclick="@(() => { AddCategory("Yes");AddCategory("No"); })">+Yes/No</button>
+            <button type="button" class="btn btn-primary sue" @onclick="@(() => { AddCategory("Maybe");})">+Maybe</button>
+            <button type="button" class="btn btn-primary sue" @onclick="@(() => { Parameter.IsOrdinal = true; AddCategory("Low");AddCategory("Medium"); AddCategory("High");})">+L/M/H</button>
+            <button type="button" class="btn btn-primary sue" @onclick="@(() => { Parameter.IsOrdinal = true; AddCategory("Small");AddCategory("Medium");AddCategory("Large");})">+S/M/L</button>
+            <button type="button" class="btn btn-primary sue" @onclick="@(() => { AddCategory("Reject");})">+Reject</button>
+        </div>
+        <div class="form-group">
+            <section class="mt-2" id="no-more-tables">
+                <table class="table table-hover">
+                    <thead class="thead">
+                        @if (Parameter.Categories.Count > 0)
+                        {
+                            <tr>
+                                <th style="width:10%"></th>
+                                <th style="width:80%">Value</th>
+                                <th style="width:10%"></th>
+                            </tr>
+                        }
+                    </thead>
+                    <tbody>
+                        @foreach (var cat in Parameter.Categories.OrderBy(c => c.SortOrder))
+                        {
+                            <tr draggable="true" @ondrop="@(()=> DropCategory(cat.CategoryGuid))" @ondrag="@(()=> StartDragCategory(cat.CategoryGuid))" ondragover="event.preventDefault();">
+                                <td nowrap data-title="">
+                                    <a style='padding:5px' data-toggle='tooltip' title='Edit'>
+                                        <i class="oi oi-pencil" @onclick="()=>EditCategory(cat.CategoryGuid)" />
+                                    </a>
+                                    <a style='padding:5px' data-toggle='tooltip' title='Delete'>
+                                        <i class="oi oi-trash" @onclick="()=>DeleteCategory(cat.CategoryGuid)" />
+                                    </a>
+                                </td>
+                                <td>@cat.Value</td>
+                                <td>
+                                    <div class="row">
+                                        <a style='padding:0.1rem;' data-toggle='tooltip' title='Move Up'>
+                                            <i class="oi oi-caret-top" @onclick="()=>SetCategorySortOrder(cat.CategoryGuid,cat.SortOrder-1)" />
+                                        </a>
+                                        <a style='padding:0.1rem;' data-toggle='tooltip' title='Move Down'>
+                                            <i class="oi oi-caret-bottom" @onclick="()=>SetCategorySortOrder(cat.CategoryGuid,cat.SortOrder+1)" />
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        </div>
+    }
+    <div class="form-group float-right">
+        <button type="button" class="btn btn-primary sue" disabled="@IsError" @onclick="SaveParameter">Save</button>
+        <button type="button" class="btn btn-danger sue @(Parameter.IsOutput?"d-none":string.Empty)" @onclick="()=>ParameterCancelled.InvokeAsync()">Cancel</button>
+    </div>
+</EditForm>
+<Modal @ref="editCategoryModal">
+    <Title>
+        Edit Category
+    </Title>
+    <Body>
+        <div class="form-group row">
+            <label class="col col-form-label" for="editCategoryValue">Value</label>
+            <div class="col">
+                <input class="sue" id="editCategoryValue" @bind-value="currentCategoryValue" @bind-value:event="oninput" type="text" />
+            </div>
+        </div>
+    </Body>
+    <Footer>
+        <button type="button" class="btn btn-primary sue" disabled="@(currentCategoryValue == string.Empty)" @onclick="SaveCategory">Save</button>
+        <button type="button" class="btn btn-danger sue" @onclick="() => { currentCategory = null; currentCategoryValue = string.Empty; editCategoryModal.Close(); }">Cancel</button>
+    </Footer>
+</Modal>
+@code {      
+    protected override void OnParametersSet()
+    {
+        _parameterLowerValue = Parameter.LowerValue.ToString();
+        _parameterUpperValue = Parameter.UpperValue.ToString();
+        _parameterIncrement = Parameter.Increment.ToString();
+        base.OnParametersSet();
+    }
+    [Parameter]
+    public SUM.Model.Components.Descriptive.Parameter Parameter { get; set; }
+    [Parameter]
+    public EventCallback ParameterSaved { get; set; }
+    [Parameter]
+    public EventCallback ParameterCancelled { get; set; }
+    [Parameter]
+    public Guid ModelGuid { get; set; }
+    bool IsError
+    {
+        get
+        {
+            if (Parameter.Name is null || Parameter.Name == string.Empty || Parameter.Name.Contains(',') || Parameter.Name.Contains("#Error"))
+                return true;
+            if (Parameter.ParameterTypeId is null || Parameter.ParameterTypeId == string.Empty)
+                return true;
+            if (Parameter.IsNumeric)
+            {
+                if (Parameter.LowerValue >= Parameter.UpperValue)
+                    return true;
+                if (Parameter.Increment <= 0)
+                    return true;
+                var increments = (int)Math.Round((Parameter.UpperValue - Parameter.LowerValue) / Parameter.Increment);
+                var delta = Math.Abs(increments * Parameter.Increment + Parameter.LowerValue - Parameter.UpperValue);
+                if (Math.Round(delta, Parameter.Digits) > double.Epsilon)
+                    return true;
+            }
+            else
+            {
+                if (Parameter.Categories.Count <= 1)
+                    return true;
+            }
+            return false;
+        }
+    }
+    public enum ParameterTypes
+    {
+        Numeric,
+        Categorical
+    }
+    async Task SaveParameter()
+    {
+        if (!Parameter.IsOutput)
+        {
+            foreach (var parameter in ModelHandlerService.CurrentModel.Parameters)
+            {
+                if(parameter.ParameterGuid != Parameter.ParameterGuid && parameter.Name == Parameter.Name)
+                {
+                    ToastService.ShowError("A Variable with this name already exists");
+                    return;
+                }
+            }
+        }
+        var list = new List<SUM.Model.Components.Descriptive.Parameter>();
+        list.Add(Parameter);
+        var opresult =  await SueApiService.PostCreateOrUpdateParameters(HttpClient, ModelGuid, list);
+        if(opresult.IsError)
+        {
+            ToastService.ShowError(opresult.Error);
+        }
+        else
+        {
+            ToastService.ShowSuccess("Parameter Saved");
+        }
+        await ParameterSaved.InvokeAsync();
+    }
+    string currentCategoryValue = string.Empty;
+    Modal editCategoryModal;
+    SUM.Model.Components.Descriptive.Category currentCategory;
+    void SaveCategory()
+    {
+        if (currentCategoryValue.Contains(","))
+            ToastService.ShowError("Categories may not contain commas");
+        else if (Parameter.Categories.Any(c => c.Value.ToLower() == currentCategoryValue.ToLower()))
+            ToastService.ShowWarning("Category is already added");
+        else
+        {
+            currentCategory.Value = currentCategoryValue;
+            currentCategory = null;
+            currentCategoryValue = string.Empty;
+            editCategoryModal.Close();
+        }
+    }
+    void EditCategory(Guid categoryGuid)
+    {
+        currentCategory = Parameter.Categories.Find(c => c.CategoryGuid == categoryGuid);
+        currentCategoryValue = currentCategory.Value;
+        if (currentCategory is not null)
+        {
+            editCategoryModal.Open();
+        }
+    }
+    void AddCategory(string value)
+    {
+        if (value.Contains(","))
+            ToastService.ShowError("Categories may not contain commas");
+        else if (Parameter.Categories.Any(c => c.Value.ToLower() == value.ToLower()))
+            ToastService.ShowError("Category is already added");
+        else
+        {
+            Parameter.Categories.Add(new SUM.Model.Components.Descriptive.Category
+            {
+                Value = value,
+                CategoryGuid = Guid.NewGuid(),
+                SortOrder = Parameter.Categories.Count > 0 ? Parameter.Categories.Max(c => c.SortOrder) + 1 : 1,
+            });
+            currentCategoryValue = string.Empty;
+        }
+    }
+    void DeleteCategory(Guid categoryGuid)
+    {
+        Parameter.Categories.RemoveAll(c => c.CategoryGuid == categoryGuid);
+        var sortOrderCount = 1;
+        foreach (var cat in Parameter.Categories)
+        {
+            cat.SortOrder = sortOrderCount++;
+        }
+    }
+
+    void SetCategorySortOrder(Guid categoryGuid, int newSortOrder)
+    {
+        var currentCat = Parameter.Categories.Find(c => c.CategoryGuid == categoryGuid);
+        if (newSortOrder > currentCat.SortOrder)
+        {
+            var maxSortOrder = Parameter.Categories.Max(c => c.SortOrder);
+            if (currentCat.SortOrder < maxSortOrder)
+            {
+                foreach (var cat in Parameter.Categories)
+                {
+                    if (cat.SortOrder > currentCat.SortOrder && cat.SortOrder <= newSortOrder)
+                    {
+                        cat.SortOrder -= 1;
+                    }
+                }
+                currentCat.SortOrder = newSortOrder;
+            }
+        }
+        else if (newSortOrder < currentCat.SortOrder)
+        {
+            var minSortOrder = Parameter.Categories.Min(c => c.SortOrder);
+            if (currentCat.SortOrder > minSortOrder)
+            {
+                foreach (var cat in Parameter.Categories)
+                {
+                    if (cat.SortOrder < currentCat.SortOrder && cat.SortOrder >= newSortOrder)
+                    {
+                        cat.SortOrder += 1;
+                    }
+                }
+                currentCat.SortOrder = newSortOrder;
+            }
+        }
+    }
+    Guid currentDragCategory;
+    void DropCategory(Guid categoryGuid)
+    {
+        if (currentDragCategory != Guid.Empty)
+        {
+            var getDraggedCat = Parameter.Categories.FirstOrDefault(c => c.CategoryGuid == currentDragCategory);
+            var getDroppedCat = Parameter.Categories.FirstOrDefault(c => c.CategoryGuid == categoryGuid);
+            if (getDraggedCat is not null && getDroppedCat is not null)
+            {
+                SetCategorySortOrder(currentDragCategory, getDroppedCat.SortOrder);
+            }
+        }
+    }
+    void StartDragCategory(Guid categoryGuid)
+    {
+        currentDragCategory = categoryGuid;
+    }
+    string _parameterLowerValue;
+    string ParameterLowerValue {
+        get { return _parameterLowerValue; }
+        set {
+            var regex = new Regex("[^-\\d\\.]");
+            _parameterLowerValue = regex.Replace(value,"");
+            if (double.TryParse(_parameterLowerValue, out double parsedValue))
+                Parameter.LowerValue = parsedValue;
+        }
+    }
+    string _parameterUpperValue;
+    string ParameterUpperValue
+    {
+        get { return _parameterUpperValue; }
+        set
+        {
+            var regex = new Regex("[^-\\d\\.]");
+            _parameterUpperValue = regex.Replace(value, "");
+            if (double.TryParse(_parameterUpperValue, out double parsedValue))
+                Parameter.UpperValue = parsedValue;
+        }
+    }
+    string _parameterIncrement;
+    string ParameterIncrement
+    {
+        get { return _parameterIncrement; }
+        set
+        {
+            var regex = new Regex("[^-\\d\\.]");
+            _parameterIncrement = regex.Replace(value, "");
+            if (double.TryParse(_parameterIncrement, out double parsedValue))
+                Parameter.Increment = parsedValue;
+        }
+    }
+}

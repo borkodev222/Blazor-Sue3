@@ -1,0 +1,11 @@
+﻿@font-face {
+    font-family: CarosSoft;
+    src: url('CarosSoft.woff');
+}
+
+@font-face {
+    font-family: CarosSoft;
+    font-weight: bold;
+    src: url('CarosSoftBold.woff');
+}
+/*Convert fonts to .woff, then it will publish*/

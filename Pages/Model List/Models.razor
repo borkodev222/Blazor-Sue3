@@ -1,0 +1,391 @@
+﻿@page "/models"
+@layout MainLayout
+@inject HttpClient httpClient
+@inject NavigationManager NavigationManager
+@inject Sue3.Web.Blazor.Data.SueApiService SueApiService
+@inject Sue3.Web.Blazor.Data.ModelHandlerService ModelHandlerService
+@inject IToastService ToastService
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+
+
+@if (loading)
+{
+    <div class="modal d-inline" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content border-0">
+                <div class="modal-body">
+                    <div class="d-flex justify-content-center">
+                        <div class="spinner-border" role="status">
+                            <span class="sr-only">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <section class="mt-2" id="no-more-tables">
+        <table class="table table-hover">
+            <thead class="thead">
+                <tr>
+                    <th colspan="@(isSuperUser?7:6)">
+                        <div class="row">
+                            <div class="col">
+                                <button type="button" class="btn btn-primary sue" @onclick="CreateNewModel">Create New Model</button>
+                                <label type="button" class="btn btn-primary sue m-0" for="customFile">Choose file</label>
+                            </div>
+                        </div>
+                    </th>
+                </tr>
+                <tr>
+                    <th colspan="@(isSuperUser?7:6)">
+                        <div class="row">
+                            <div class="col">
+                                <Pagination ListCount="@ListCount" @bind-PageIndex="@PageIndex" ItemsPerPage="@ItemsPerPage" ItemsPerPageChanged="ItemsPerPageChanged" />
+                            </div>
+                            <div class="text-right">
+                                <label for="modelListSearch" class="oi oi-magnifying-glass"></label>
+                                <input id="modelListSearch" @bind-value="searchTerm" @bind-value:event="oninput" class="sue" placeholder="Search" type="text" />
+                            </div>
+                        </div>
+                    </th>
+                </tr>
+                <tr>
+                    <th style="width:10%"></th>
+                    <th style="width:5%" class="numeric">#</th>
+                    <th style="width:20%">Name</th>
+                    <th style="width:@(isSuperUser?30:35)%">Description</th>
+                    @if (isSuperUser)
+                    {
+                        <th style="width:5%">Owner</th>
+                    }
+                    <th style="width:15%">Status</th>
+                    <th style="width:15%" class="numeric">Version</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var model in models.Skip(PageIndex * ItemsPerPage).Take(ItemsPerPage))
+                {
+                    <tr>
+                        <td nowrap data-title="">
+                            <a style='padding:5px' data-toggle='tooltip' title='Copy'>
+                                <i class='oi oi-paperclip' @onclick="() => { currentModel = model;exportSamples = false; exportRules = false; copyModal.Open(); }" />
+                            </a>
+                            <a style='padding:5px' data-toggle='tooltip' title='Edit'>
+                                <i class="oi oi-pencil" @onclick="() => EditModel(model.ModelGuid)" />
+                            </a>
+                            <a style='padding:5px' data-toggle='tooltip' title='Delete'>
+                                <i class="oi oi-trash" @onclick="()=> { currentModel = model; deleteModal.Open(); }" />
+                            </a>
+                            <a style='padding:5px' data-toggle='tooltip' title='Download'>
+                                <i class="oi oi-data-transfer-download" @onclick="async()=> { currentModel = model; await DownloadModel(); }" />
+                            </a>
+                        </td>
+                        <td data-title="#" class="numeric">@(model.ModelNumber + 1)</td>
+                        <td data-title="Name" @onclick="() => EditModel(model.ModelGuid)">@model.Name</td>
+                        <td data-title="Description">@model.Description</td>
+                        @if (isSuperUser)
+                        {
+                            <th data-title="Owner">@model.Owner</th>
+                        }
+                        <td data-title="Status">@model.ModelStatusId</td>
+                        <td data-title="Version" class="numeric" @onclick="()=> { if (model.Version > 1) { currentModel = model; restoreVersion = model.Version - 1; versionModal.Open(); } }">@model.Version</td>
+                    </tr>
+                }
+                @if (models.Count() == 0)
+                {
+                    <tr>
+                        <td colspan="2"></td>
+                        <td colspan="@(isSuperUser?3:2)">
+                            There is no data on current page
+                        </td>
+                        <td colspan="2"></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+    <InputFile class="invisible" style="position:absolute;top:0px;right:0px;" id="customFile" accept=".sue3,.csv,.sue" OnChange="OnInputFileChange" />
+
+    #region Modals
+    <Modal @ref="copyModal">
+        <Title>Copy Model</Title>
+        <Body>
+            <div class="form-check">
+                <input class="form-check-input" id="exportRulesCheckBox" type="checkbox" @bind="exportRules" />
+                <label for="exportRulesCheckBox">Copy Rules</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" id="exportSamplesCheckBox" type="checkbox" @bind="exportSamples" />
+                <label for="exportSamplesCheckBox">Copy Samples</label>
+            </div>
+        </Body>
+        <Footer>
+            <button type="button" class="btn btn-primary sue" @onclick="GetCopyModel">Copy</button>
+            <button type="button" class="btn btn-danger sue" data-dismiss="modal" @onclick="() => copyModal.Close()">Close</button>
+        </Footer>
+    </Modal>
+    <Modal @ref="deleteModal">
+        <Title>Confirm Delete</Title>
+        <Body>
+            Are you sure you want to delete this model?
+        </Body>
+        <Footer>
+            <button type="button" class="btn btn-primary sue" @onclick="DeleteModel">Delete</button>
+            <button type="button" class="btn btn-danger sue" data-dismiss="modal" @onclick="() => deleteModal.Close()">Close</button>
+        </Footer>
+    </Modal>
+    <Modal @ref="versionModal">
+        <Title>
+            Restore Version
+        </Title>
+        <Body>
+            @if (currentModel is not null)
+            {
+                <div class="form-group">
+                    <span>Please select a version to restore:</span>
+                </div>
+                <div class="form-group">
+                    @for (var x = 1; x < currentModel.Version; x++)
+                    {
+                        var version = x;
+                        <input type="radio" id="@($"restoreVersion{version}")" class="custom-control-inline"
+                               name="restoreVersion"
+                               checked="@(restoreVersion == version)"
+                               @onchange="@(() => { restoreVersion = version;})" />
+                        <label for="@($"restoreVersion{version}")">@($"Version {version}")</label><br>
+                    }
+                </div>
+                <div class="form-group">
+                    <span>Current Version: @(currentModel.Version)</span>
+                </div>
+            }
+        </Body>
+        <Footer>
+            <button type="button" class="btn btn-primary sue" @onclick="PostRestoreVersion">Restore</button>
+            <button type="button" class="btn btn-danger sue" @onclick="versionModal.Close">Cancel</button>
+        </Footer>
+    </Modal>
+    <Modal @ref="importModal">
+        <Title>
+            Confirm Import
+        </Title>
+        <Body>
+            Confirm import of file: @fullFileName
+        </Body>
+        <Footer>
+            <button type="button" class="btn btn-primary sue" @onclick="Import">Import</button>
+            <button type="button" class="btn btn-danger sue" @onclick="()=> { 
+                                                                           importModal.Close(); 
+                                                                           ext = string.Empty;
+                                                                           binarystring = string.Empty;
+                                                                           filename = string.Empty;
+                                                                           fullFileName = string.Empty;
+                                                                       }">Cancel</button>
+        </Footer>
+    </Modal>
+    #endregion
+}
+@code{
+    protected override async Task OnInitializedAsync()
+    {
+        if (SueApiService.LoggedIn)
+        {
+            ModelHandlerService.NewModel = false;
+            ModelHandlerService.CurrentPane = ModelHandlerService.Panes.ModelList;
+            //gets models, and checks if user is super user
+
+            isSuperUser = await SueApiService.GetSuperUser(httpClient);
+            ModelHandlerService.IsSuperUser = isSuperUser;
+
+
+            ModelHandlerService.Models = await SueApiService.GetModels(httpClient);
+            //initialises properties
+            ItemsPerPage = 10;
+            loading = false;
+            currentModel = null;
+            exportSamples = false;
+            exportRules = false;
+            ext = string.Empty;
+            binarystring = string.Empty;
+            filename = string.Empty;
+            fullFileName = string.Empty;
+            ToastService.ShowSuccess("Models Retrieved");
+        }
+        else
+        {
+            NavigationManager.NavigateTo("");
+        }
+    }
+    public void Dispose()
+    {
+        //when model list is no longer rendered, free up memory;
+        ModelHandlerService.Models = null;
+    }
+    void EditModel(Guid modelGuid)
+    {
+        loading = true;
+        ToastService.ShowInfo("Fetching Model");
+        //gets the model, and sets the active model to the selected model.
+        var model = models.First(m => m.ModelGuid == modelGuid);
+        ModelHandlerService.CurrentModel = model;
+        ModelHandlerService.CurrentModelOwner = model.Owner;
+        //depending on the status of the model, redirects to proper page
+        if (model.ModelStatusId == "Empty")
+            NavigationManager.NavigateTo("Manage");
+        else if (model.ModelStatusId == "VariablesDefined")
+            NavigationManager.NavigateTo("Train");
+        else
+            NavigationManager.NavigateTo("Use");
+    }
+    async Task GetCopyModel()
+    {
+        var tempPage = PageIndex;
+        loading = true;
+        await SueApiService.GetCopyModel(httpClient, currentModel.ModelGuid, exportRules, exportSamples);
+        await OnInitializedAsync();
+        PageIndex = tempPage;
+
+    }
+    async Task DeleteModel()
+    {
+        var tempPage = PageIndex;
+        loading = true;
+        await SueApiService.GetDeleteModel(httpClient, currentModel.ModelGuid);
+        await OnInitializedAsync();
+        //checks to see if current page is within limits of models, since model was deleted
+        if (tempPage <= ListCount - 1 / ItemsPerPage)
+            PageIndex = tempPage;
+        else
+            PageIndex = tempPage - 1;
+    }
+    async Task DownloadModel()
+    {
+        var binaryData = await SueApiService.GetExportModel(httpClient, currentModel.ModelGuid);
+        await JSRuntime.InvokeVoidAsync("downloadBinary", currentModel.Name + ".sue3", binaryData);
+        currentModel = null;
+    }
+    void CreateNewModel()
+    {
+        loading = true;
+        ModelHandlerService.NewModel = true;//indicates this is a fresh model
+        var newGuid = Guid.NewGuid();
+        ModelHandlerService.CurrentModel = new SUM.Model.Components.Descriptive.Model()
+        {
+            Name = string.Empty,
+            ModelGuid = newGuid,
+            OutputParameter = new SUM.Model.Components.Descriptive.Parameter()
+            {
+                IsOutput = true,
+                ModelGuid = newGuid,
+                ParameterGuid = Guid.NewGuid(),
+                ParameterTypeId = "Numeric",
+                LowerValue = 0,
+                UpperValue = 1,
+                Increment = 1
+            }
+        };
+        ModelHandlerService.CurrentModelOwner = SueApiService.UserId;
+        NavigationManager.NavigateTo("Manage");
+    }
+    async Task OnInputFileChange(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        ext = System.IO.Path.GetExtension(file.Name);
+        filename = System.IO.Path.GetFileNameWithoutExtension(file.Name);
+        fullFileName = file.Name;
+        var fs = file.OpenReadStream();
+        var binary = new byte[file.Size];
+        await fs.ReadAsync(binary);
+        binarystring = System.Text.Encoding.UTF8.GetString(binary);
+        importModal.Open();
+    }
+    async Task Import()
+    {
+        importModal.Close();
+        if (ext == ".sue" || ext == ".sue3")
+        {
+            var tempPage = PageIndex;
+            await SueApiService.PostImportModel(httpClient, filename + ext, binarystring);
+            loading = true;
+            await OnInitializedAsync();
+            PageIndex = tempPage;
+        }
+        else if (ext == ".csv")
+        {
+            var operationResult = await SueApiService.PostDeduceModel(httpClient, filename, binarystring);
+            if (!operationResult.IsError)
+            {
+                ModelHandlerService.Models = await SueApiService.GetModels(httpClient);
+                EditModel(Guid.Parse(operationResult.Result));
+            }
+            else
+            {
+                ToastService.ShowError(operationResult.Error);
+            }
+        }
+    }
+    async Task PostRestoreVersion()
+    {
+        versionModal.Close();
+        var opresult = await SueApiService.PostRestoreVersion(httpClient, currentModel.ModelGuid, restoreVersion);
+        if (opresult.IsError)
+        {
+            ToastService.ShowError(opresult.Error);
+        }
+        await OnInitializedAsync();
+    }
+    IEnumerable<SUM.Model.Components.Descriptive.Model> models => ModelHandlerService.Models.Where(m => //filters the model list for the search bar
+        m.Name.Contains(searchTerm, StringComparison.InvariantCultureIgnoreCase) ||
+        m.Description.Contains(searchTerm, StringComparison.InvariantCultureIgnoreCase) ||
+        m.Owner.Contains(searchTerm, StringComparison.InvariantCultureIgnoreCase) ||
+        m.Version.ToString().Contains(searchTerm, StringComparison.InvariantCultureIgnoreCase) ||
+        m.ModelNumber.ToString().Contains(searchTerm, StringComparison.InvariantCultureIgnoreCase) ||
+        m.ModelStatusId.Contains(searchTerm, StringComparison.InvariantCultureIgnoreCase));
+    bool loading = true;
+    bool isSuperUser = false;
+    SUM.Model.Components.Descriptive.Model currentModel;
+    bool exportSamples = false;
+    bool exportRules = false;
+    Modal copyModal { get; set; }
+    Modal deleteModal { get; set; }
+    Modal versionModal { get; set; }
+    Modal importModal { get; set; }
+
+    int restoreVersion;
+
+    string fullFileName;
+    string ext;
+    string binarystring;
+    string filename;
+
+    string searchTerm = string.Empty;
+    int ItemsPerPage { get; set; } = 10;
+    void ItemsPerPageChanged(int newItemsPerPage)
+    {
+        ItemsPerPage = newItemsPerPage;
+        StateHasChanged();
+    }
+    int ListCount
+    {
+        get //this makes sure that the Page index is always within the listcount
+        {
+            var x = models.Count();
+            PageIndex = PageIndex >= (x - 1) / ItemsPerPage ? (x - 1) / ItemsPerPage : PageIndex;
+            return x;
+        }
+        set
+        {
+            _ = value;
+        }
+    }
+    int PageIndex //this allows for the page to be remembered during the session
+    {
+        get { return ModelHandlerService.ModelsPageIndex; }
+        set { ModelHandlerService.ModelsPageIndex = value; }
+    }
+}

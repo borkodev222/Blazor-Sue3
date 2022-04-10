@@ -1,0 +1,201 @@
+﻿@page "/Train/Build"
+@layout MainLayout
+@inject HttpClient HttpClient
+@inject NavigationManager NavigationManager
+@inject SueApiService SueApiService
+@inject ModelHandlerService ModelHandlerService
+@inject IToastService ToastService
+@inject IJSRuntime JSRuntime
+@using SUM.Model.Components.Descriptive
+
+<!-- This is the submenu for training the model: call build model, or print the model info. displays all info about the model-->
+
+@if (loading)
+{
+    <div class="modal d-inline" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content border-0">
+                <div class="modal-body">
+                    <div class="d-flex justify-content-center">
+                        <div class="spinner-border" role="status">
+                            <span class="sr-only">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="row justify-content-center overflow-auto" style="margin-left:3vw;margin-right:3vw;margin-top:10vh;padding:1rem;margin-bottom:2rem;">
+        <div class="col">
+            <div class="justify-content-around">
+                <div class="form-group">
+                    <button type="button" class="btn btn-primary sue" @onclick="BuildModel">Build</button>
+                    <button type="button" class="btn btn-primary sue float-right" @onclick="PrintInfo">Print Model Info</button>
+                </div>
+            </div>
+            <div class="justify-content-center" id="modelInfo">
+                <strong>@ModelHandlerService.CurrentModelOwner - Model #@model.ModelNumber - @model.Name</strong><br />
+                <strong>List Of Variables</strong>
+                <section class="mt-2" id="no-more-tables">
+                    <table class="table table-hover">
+                        <thead class="thead">
+                            <tr>
+                                <th>#</th>
+                                <th>Variable</th>
+                                <th>Type</th>
+                                <th colspan="3">Details</th>
+                                @if (model.ModelStatusId == "Trained")
+                                {
+                                    <th>Correlation</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var parameter in model.Parameters)
+                            {
+                                <tr>
+                                    <td>@(model.Parameters.OrderBy(p=>p.SortOrder).ToList().IndexOf(parameter)+1)</td>
+                                    <td>@parameter.Name</td>
+                                    @if (parameter.IsNumeric)
+                                    {
+                                        <td>@parameter.ParameterTypeId</td>
+                                        <td>LowerValue: @parameter.LowerValue</td>
+                                        <td>UpperValue: @parameter.UpperValue</td>
+                                        <td>Increment: @parameter.Increment</td>
+                                    }
+                                    else
+                                    {
+                                        <td>@parameter.ParameterTypeId @(parameter.IsOrdinal?"(Ordinal)":"(Not Ordinal)")</td>
+                                        int index = 0;
+                                        <td colspan="3">
+                                            @foreach (var cat in parameter.Categories)
+                                            {
+                                                index++;
+                                                @(cat.Value)@(index!=parameter.Categories.Count?", ":string.Empty)
+                                            }
+                                        </td>
+                                    }
+                                    @if (model.ModelStatusId == "Trained")
+                                    {
+                                        <td>@parameter.UserWeight</td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+                <div class="form-group">
+                    <strong>Outcomes - </strong>
+                    @if (model.OutputParameter.IsNumeric)
+                    {
+                        <span>
+                            Increment - @model.OutputParameter.Increment, Lower Value - @model.OutputParameter.LowerValue, Upper Value - @model.OutputParameter.UpperValue
+                        </span>
+                    }
+                    else
+                    {
+                        int index = 0;
+                        @foreach (var cat in model.OutputParameter.Categories)
+                        {
+                            index++;
+                            @(cat.Value)@(index!=model.OutputParameter.Categories.Count?", ":string.Empty)
+                        }
+                    }
+                </div>
+                @if (model.Rules.Count > 0)
+                {
+                    <strong>List Of Rules</strong>
+                    <section class="mt-2" id="no-more-tables">
+                        <table class="table table-hover">
+                            <thead class="thead">
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var rule in model.Rules)
+                                {
+                                    <tr>
+                                        <td>@rule.Name</td>
+                                        <td>@(rule is ExplicitRule?"Explicit":"Relationship")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </section>
+                }
+            </div>
+        </div>
+    </div>
+    <Modal @ref="weightsModal">
+        <Title>
+            Confirm
+        </Title>
+        <Body>
+            You have changed the correlation levers manually. Would you like to recalculate or continue to use yours?
+        </Body>
+        <Footer>
+            <button type="button" class="btn btn-primary sue" @onclick="()=>TrainModel(true)">Recalculate</button>
+            <button type="button" class="btn btn-primary sue" @onclick="()=>TrainModel(false)">Continue</button>
+            <button type="button" class="btn btn-danger sue" @onclick="weightsModal.Close">Cancel</button>
+        </Footer>
+    </Modal>
+}
+@code{
+    protected override async Task OnInitializedAsync()
+    {
+        loading = true;
+        if (SueApiService.LoggedIn)
+        {
+            if (ModelHandlerService.CurrentModel is not null)
+            {
+                ModelHandlerService.CurrentPane = ModelHandlerService.Panes.Train;
+                ModelHandlerService.CurrentModel = await SueApiService.GetModel(HttpClient, ModelHandlerService.CurrentModel.ModelGuid);
+                loading = false;
+            }
+            else
+            {
+                NavigationManager.NavigateTo("Models");
+            }
+        }
+        else
+        {
+            NavigationManager.NavigateTo("");
+        }
+    }
+    async Task BuildModel()
+    {
+        if (model.Parameters.Any(p => p.UserWeight != p.CalculatedWeight))
+        {
+            weightsModal.Open();
+        }
+        else
+        {
+            await TrainModel(true);
+        }
+    }
+    async Task TrainModel(bool eraseUserWeights)
+    {
+        var opresult = await SueApiService.TrainModel(HttpClient, model.ModelGuid, eraseUserWeights);
+        if (opresult.IsError)
+        {
+            ToastService.ShowError(opresult.Error);
+        }
+        else
+        {
+            ToastService.ShowSuccess("Model Trained");
+            NavigationManager.NavigateTo("Visualise");
+        }
+    }
+    void PrintInfo()
+    {
+        JSRuntime.InvokeVoidAsync("printModelInfo");
+    }
+    SUM.Model.Components.Descriptive.Model model => ModelHandlerService.CurrentModel;
+    bool loading;
+    Modal weightsModal;
+}
